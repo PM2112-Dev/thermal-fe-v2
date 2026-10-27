@@ -1,5 +1,6 @@
 // Chỉ dùng cho type-check: mọi ngôn ngữ phải có đúng bộ key của vi (ngôn ngữ chuẩn).
 // Thêm namespace mới thì khai báo thêm ở cả hai type dưới đây.
+import type viAi from './vi/ai'
 import type viAlert from './vi/alert'
 import type viAlertSetting from './vi/alertSetting'
 import type viApiError from './vi/apiError'
@@ -7,6 +8,7 @@ import type viArea from './vi/area'
 import type viBatcam from './vi/batcam'
 import type viButtons from './vi/buttons'
 import type viCamera from './vi/camera'
+import type viCameraBrand from './vi/cameraBrand'
 import type viCommon from './vi/common'
 import type viDashboard from './vi/dashboard'
 import type viEnums from './vi/enums'
@@ -27,6 +29,7 @@ import type viUpload from './vi/upload'
 import type viUser from './vi/user'
 import type viValidation from './vi/validation'
 import type viVideo from './vi/video'
+import type enAi from './en/ai'
 import type enAlert from './en/alert'
 import type enAlertSetting from './en/alertSetting'
 import type enApiError from './en/apiError'
@@ -34,6 +37,7 @@ import type enArea from './en/area'
 import type enBatcam from './en/batcam'
 import type enButtons from './en/buttons'
 import type enCamera from './en/camera'
+import type enCameraBrand from './en/cameraBrand'
 import type enCommon from './en/common'
 import type enDashboard from './en/dashboard'
 import type enEnums from './en/enums'
@@ -56,6 +60,7 @@ import type enValidation from './en/validation'
 import type enVideo from './en/video'
 
 export interface MessageSchema {
+  ai: typeof viAi
   alert: typeof viAlert
   alertSetting: typeof viAlertSetting
   apiError: typeof viApiError
@@ -63,6 +68,7 @@ export interface MessageSchema {
   batcam: typeof viBatcam
   buttons: typeof viButtons
   camera: typeof viCamera
+  cameraBrand: typeof viCameraBrand
   common: typeof viCommon
   dashboard: typeof viDashboard
   enums: typeof viEnums
@@ -86,6 +92,7 @@ export interface MessageSchema {
 }
 
 interface EnMessages {
+  ai: typeof enAi
   alert: typeof enAlert
   alertSetting: typeof enAlertSetting
   apiError: typeof enApiError
@@ -93,6 +100,7 @@ interface EnMessages {
   batcam: typeof enBatcam
   buttons: typeof enButtons
   camera: typeof enCamera
+  cameraBrand: typeof enCameraBrand
   common: typeof enCommon
   dashboard: typeof enDashboard
   enums: typeof enEnums

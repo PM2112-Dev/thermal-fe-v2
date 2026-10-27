@@ -115,3 +115,21 @@ export const importCameraIECApi = (data: any): Promise<IResponse> => {
     url: '/api/Cameras/importIEC', data, headers: {'Content-Type': 'multipart/form-data'}
   })
 }
+
+// ---- Hướng camera (la bàn) ----
+export const getCameraDirectionApi = (id: number): Promise<IResponse<any>> => {
+  return request.get({url: `api/Cameras/${id}/direction`})
+}
+
+export const saveCameraDirectionApi = (id: number, data: { heading: number; panInverted: boolean }): Promise<IResponse<any>> => {
+  return request.put({url: `api/Cameras/${id}/direction`, data})
+}
+
+// ---- Cảnh báo cháy/khói bật trên camera qua API hãng ----
+export const getCameraFireAlarmApi = (id: number): Promise<IResponse<any>> => {
+  return request.get({url: `api/Cameras/${id}/fire-alarm`})
+}
+
+export const saveCameraFireAlarmApi = (id: number, data: object): Promise<IResponse<any>> => {
+  return request.put({url: `api/Cameras/${id}/fire-alarm`, data})
+}

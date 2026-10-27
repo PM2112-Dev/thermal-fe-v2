@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import { usePermission } from '@/hooks/web/usePermission'
 import { enumLabel } from '@/utils/enumLabel'
 import ListTemplate from '@/components/PageTemplate/List/ListTemplate.vue'
 import {TableColumn} from '@/components/Table'
@@ -19,6 +20,7 @@ import ChannelCard from "@/views/notification/components/ChannelCard.vue";
 import { useAppStore } from '@/store/modules/app'
 
 const {t} = useLang()
+const { hasAction } = usePermission()
 
 const columns = computed<TableColumn[]>(() => [
   {label: 'STT', type: 'index', width: '60'},
@@ -86,6 +88,7 @@ const isMobile = computed(() => appStore.isMobile)
 
 <template>
   <list-template
+      :show-btn-add="hasAction('notification-channel', 'create')"
       ref="elTableRef"
       :title="t('alertSetting.channel.listTitle')"
       key-list="channel-list"

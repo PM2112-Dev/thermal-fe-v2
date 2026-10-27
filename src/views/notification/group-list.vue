@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import { usePermission } from '@/hooks/web/usePermission'
 import { enumLabel } from '@/utils/enumLabel'
 import ListTemplate from '@/components/PageTemplate/List/ListTemplate.vue'
 import {TableColumn} from '@/components/Table'
@@ -21,6 +22,7 @@ import GroupCard from "@/views/notification/components/GroupCard.vue";
 import { useAppStore } from '@/store/modules/app'
 
 const {t} = useLang()
+const { hasAction } = usePermission()
 
 const columns = computed<TableColumn[]>(() => [
   {label: 'STT', type: 'index', width: '60'},
@@ -101,6 +103,7 @@ const isMobile = computed(() => appStore.isMobile)
 
 <template>
   <list-template
+      :show-btn-add="hasAction('notification-group', 'create')"
       :title="t('alertSetting.group.listTitle')"
       ref="elTableRef"
       key-list="group-list"

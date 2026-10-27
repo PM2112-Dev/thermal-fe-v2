@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import { usePermission } from '@/hooks/web/usePermission'
 import { enumLabel } from '@/utils/enumLabel'
 import ListTemplate from '@/components/PageTemplate/List/ListTemplate.vue'
 import {TableColumn} from '@/components/Table'
@@ -28,6 +29,7 @@ import MachineCard from '@/views/category/machine/components/MachineCard.vue'
 import { useAppStore } from '@/store/modules/app'
 
 const {t} = useLang()
+const { hasAction } = usePermission()
 
 const columns = computed<TableColumn[]>(() => [
   {type: 'index', label: 'STT', width: 60},
@@ -127,6 +129,7 @@ const isMobile = computed(() => appStore.isMobile)
 
 <template>
   <list-template
+      :show-btn-add="hasAction('machine-list', 'create')"
       ref="elTableRef"
       :search-props="{ visibleSearchButton: false }"
       key-list="machine-list"

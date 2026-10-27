@@ -18,6 +18,9 @@ function pathResolve(dir: string) {
 
 export default (): UserConfig => {
   return {
+    // Cổng 5173 thường bị container docker của forest-fe chiếm nên Vite tự nhảy sang cổng khác
+    // (và bị CORS chặn). Cố định 5273 — đã có trong AppSettings:Cors của backend Thermal.
+    server: { port: 5273, strictPort: true },
     plugins: [
       vue(),
       vueJsx(),

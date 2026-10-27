@@ -33,4 +33,8 @@ export default {
   device_sensor: 'Cảm biến',
   point_list: 'Điểm giám sát',
   formula_settings: 'Cài đặt công thức PD',
+  camera_brand_list: 'Hãng camera',
+  ai: 'AI',
+  ai_model_list: 'Mô hình AI',
+  ai_feature_list: 'Chức năng AI',
 }

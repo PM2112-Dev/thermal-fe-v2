@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import { usePermission } from '@/hooks/web/usePermission'
 import { enumLabel } from '@/utils/enumLabel'
 import { useLang } from '@/hooks/web/useI18n'
 import ListTemplate from '@/components/PageTemplate/List/ListTemplate.vue'
@@ -35,6 +36,7 @@ import CameraCard from '@/views/category/camera/components/CameraCard.vue'
 import { useAppStore } from '@/store/modules/app'
 
 const { t } = useLang()
+const { hasAction } = usePermission()
 
 const router = useRouter();
 
@@ -208,6 +210,7 @@ const isMobile = computed(() => appStore.isMobile)
 <template>
   <div v-loading="syncPresetLoading">
     <list-template
+        :show-btn-add="hasAction('camera-list', 'create')"
         ref="elTableRef"
         key-list="camera-list"
         :columns="columns"

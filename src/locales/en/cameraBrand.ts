@@ -1,0 +1,21 @@
+// Camera brands and connection plugins
+export default {
+  listTitle: 'Camera brands',
+  code: 'Brand code',
+  name: 'Brand name',
+  description: 'Description',
+  searchPlaceholder: 'Enter brand code or name...',
+  plugin: 'Connection plugin',
+  pluginVersion: 'Version',
+  pluginActive: 'Active',
+  pluginDisabled: 'Loaded, disabled',
+  pluginNone: 'No plugin',
+  capabilities: 'Capabilities',
+  cameraCount: 'Cameras',
+  builtIn: 'Built-in',
+  builtInHint: 'Built-in brand: cannot be deleted and its code cannot be changed.',
+  codeHint: 'Must match the plugin BrandCode (case-insensitive).',
+  hostContract: 'Host contract',
+  loadErrors: 'Plugin load errors',
+  loadedPlugins: 'Loaded plugins',
+}
