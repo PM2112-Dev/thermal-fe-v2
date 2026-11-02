@@ -38,11 +38,11 @@
           <el-form-item prop="emapPhotoPath" :label="t('area.sitePlan')" :error="formErrors.emapPhotoPath">
             <GlbUploadButton
                 :file-path="formModel.emapPhotoPath"
-                :model-position="formModel?.emapPosition?.modelPosition"
-                :model-rotation="formModel?.emapPosition?.modelRotation"
-                :model-scale="formModel?.emapPosition?.modelScale"
-                :camera-position="formModel?.emapPosition?.cameraPosition"
-                :target="formModel?.emapPosition?.target"
+                :model-position="emapPosition?.modelPosition"
+                :model-rotation="emapPosition?.modelRotation"
+                :model-scale="emapPosition?.modelScale"
+                :camera-position="emapPosition?.cameraPosition"
+                :target="emapPosition?.target"
                 @change-file="handleChangeLocalFile"
                 @save-preview="handleSavePreview"
             />
@@ -164,8 +164,17 @@ function handleSavePreview(payload: {
   })
 }
 
+// emapPosition lưu ở BE dạng chuỗi JSON: khi đọc cần parse, khi gửi cần stringify
+const parseEmapPosition = (value: any) => {
+  if (!value) return null
+  if (typeof value !== 'string') return value
+  try { return JSON.parse(value) } catch { return null }
+}
+const emapPosition = computed(() => parseEmapPosition(props.formModel?.emapPosition))
+
 const transformFormData = (data: any) => {
-  data.emapPosition = "";
+  const position = parseEmapPosition(data.emapPosition)
+  data.emapPosition = position ? JSON.stringify(position) : ""
   const formData = buildFormData(data);
   if (pendingGlbFile.value) {
     formData.append('emapFile', pendingGlbFile.value)

@@ -5,6 +5,7 @@ export default {
   dashboard: 'Trang chủ',
   live: 'Giám sát trực tiếp',
   live_detail: 'Live camera',
+  stream_detail: 'Live camera',
   event: 'Theo dõi điểm đo',
   ai_system: 'Cảnh báo AI',
   vision_event_history_detail: 'Cảnh báo AI',
@@ -33,4 +34,8 @@ export default {
   device_sensor: 'Cảm biến',
   point_list: 'Điểm giám sát',
   formula_settings: 'Cài đặt công thức PD',
+  camera_brand_list: 'Hãng camera',
+  ai: 'AI',
+  ai_model_list: 'Mô hình AI',
+  ai_feature_list: 'Chức năng AI',
 }

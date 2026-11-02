@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { useLang } from '@/hooks/web/useI18n'
 
-import {nextTick, onMounted, onUnmounted, ref} from "vue";
-import {getCameraDetailApi, sendCommandCameraApi} from "@/api/camera";
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, CaretTop, Close, Edit, Odometer, Setting, SwitchButton, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import { getCameraDetailApi } from '@/api/camera'
 import { prepareCameraStream } from '@/plugins/webRTC/cameraStream'
 
-import useRequest from "@/hooks/web/useRequest";
-import {CAMERA_COMMANDS} from "@/constants/camera";
-import {PolygonDrawer} from "@/utils/PolygonDrawer";
-import {thermalDataByAreaApi} from "@/api/thermal-data";
-import {getBatcamRoisApi} from "@/api/batcam-config";
-import {CAMERA_PD_TYPE} from "@/constants";
+import useRequest from '@/hooks/web/useRequest'
+import { useCameraPtz } from '@/hooks/web/useCameraPtz'
+import { useFitViewportHeight } from '@/hooks/web/useFitViewportHeight'
+import { PTZ_SPEED_DEFAULT_PERCENT, PTZ_SPEED_STEP_PERCENT, toPtzSpeed } from '@/constants/camera'
+import { PolygonDrawer } from '@/utils/PolygonDrawer'
+import { thermalDataByAreaApi } from '@/api/thermal-data'
+import { getBatcamRoisApi } from '@/api/batcam-config'
+import { CAMERA_PD_TYPE } from '@/constants'
 import { useClock } from '@/hooks/web/useClock'
 
 const { t } = useLang()
@@ -20,35 +24,54 @@ const props = defineProps({
     required: true,
   },
   startDraw: {
-    type:Boolean,
+    type: Boolean,
     default: false
   },
   showBtnBack: {
-    type:Boolean,
+    type: Boolean,
     default: true
   }
 })
 
-const { localTime } = useClock();
+const { localTime } = useClock()
 
+const rootRef = ref<HTMLElement>()
+const stageRef = ref<HTMLElement>()
 const videoRef = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 
-const videoLoading = ref(true)
-const videoStream = document.createElement('video-stream') as any
-videoStream.addEventListener('stream-onopen', () => {
-  videoLoading.value = false
-  if(props.startDraw) {
-    startDrawing();
-  }
+// Khung video luôn đúng tỷ lệ của luồng để canvas vẽ vùng đo và overlay ROI khớp toạ độ với hình
+const videoAspect = ref(16 / 9)
+const stageSize = ref({ width: 0, height: 0 })
+const feedStyle = computed(() => {
+  const { width, height } = stageSize.value
+  if (!width || !height) return undefined
+  const w = Math.min(width, height * videoAspect.value)
+  return { width: `${Math.floor(w)}px`, height: `${Math.floor(w / videoAspect.value)}px` }
+})
+function readVideoSize() {
   const video = videoStream.video as HTMLVideoElement | undefined
   if (video?.videoWidth && video?.videoHeight) {
+    videoAspect.value = video.videoWidth / video.videoHeight
     roiNaturalWidth.value = video.videoWidth
     roiNaturalHeight.value = video.videoHeight
   }
+}
+
+const videoLoading = ref(true)
+const videoError = ref(false)
+const videoStream = document.createElement('video-stream') as any
+videoStream.addEventListener('stream-onopen', () => {
+  videoLoading.value = false
+  videoError.value = false
+  if (props.startDraw) {
+    startDrawing()
+  }
+  readVideoSize()
 })
 videoStream.addEventListener('stream-error', () => {
   videoLoading.value = false
+  videoError.value = true
 })
 
 // ---- Overlay ROI của camera giám sát phóng điện (chỉ đọc) ----
@@ -73,28 +96,60 @@ function loadRois() {
 }
 const isPlaying = ref(false)
 const isDrawing = ref(false)
-const loading = ref(false)
-const cam = ref<any>({});
-const preCommand = ref();
-const {onRequest} = useRequest();
-const requestCommand = (command: number, other: any = null) => {
-  onRequest(sendCommandCameraApi, {
-    cameraId: props.streamKey,
-    speed: speed.value,
-    command: command,
-    preCommand: preCommand.value
-  })
-  preCommand.value = command
-  console.log(other)
+const cam = ref<any>({})
+// Tên luồng go2rtc BE trả về; luồng AI có hậu tố "_ai". Chế độ ticket không biết tên luồng.
+const streamName = ref<string>()
+
+const isPtz = computed(() => {
+  const v = String(cam.value.ptzTypeObject?.code ?? cam.value.ptzType ?? '').toLowerCase()
+  // Chưa rõ loại thì vẫn cho điều khiển như trước
+  return v === '' || v === 'ptz' || v === '1'
+})
+// Đã bật "Phát luồng đã vẽ khung AI" nhưng BE vẫn trả luồng gốc → báo để người dùng biết không phải lỗi giao diện
+const aiStreamMissing = computed(() =>
+  !!cam.value.aiStreamEnabled && !!streamName.value && !streamName.value.endsWith('_ai'))
+
+const speedPercent = ref(PTZ_SPEED_DEFAULT_PERCENT)
+const { startCommand, stopCommand, sendCommand } = useCameraPtz(() => Number(props.streamKey), () => toPtzSpeed(speedPercent.value))
+
+const directions = [
+  { command: 'UpLeft', row: 1, column: 1, rotation: -45 },
+  { command: 'Up', row: 1, column: 2, rotation: 0 },
+  { command: 'UpRight', row: 1, column: 3, rotation: 45 },
+  { command: 'Left', row: 2, column: 1, rotation: -90 },
+  { command: 'Right', row: 2, column: 3, rotation: 90 },
+  { command: 'DownLeft', row: 3, column: 1, rotation: -135 },
+  { command: 'Down', row: 3, column: 2, rotation: 180 },
+  { command: 'DownRight', row: 3, column: 3, rotation: 135 },
+] as const
+
+// Khởi động lại / hiệu chuẩn: hỏi lại trước khi gửi để tránh bấm nhầm
+const running = ref<'Restart' | 'Calibration' | null>(null)
+async function confirmSend(key: 'Restart' | 'Calibration', messageKey: string) {
+  try {
+    await ElMessageBox.confirm(t(messageKey), t('common.confirm'), { type: 'warning' })
+  } catch {
+    return
+  }
+  running.value = key
+  try {
+    await sendCommand(key)
+    ElMessage.success(t('video.ctlSent'))
+  } finally {
+    running.value = null
+  }
 }
-const speed = ref(3);
+
+let stageObserver: ResizeObserver | undefined
 onMounted(() => {
-  loading.value = true
   prepareCameraStream(videoStream, props.streamKey as string | number)
-      .then(() => {
+      .then((name) => {
+        streamName.value = name
         videoRef?.value?.appendChild(videoStream)
 
         const video = videoStream.video
+        video.addEventListener('loadedmetadata', readVideoSize)
+        video.addEventListener('resize', readVideoSize)
         video.addEventListener('waiting', () => {
           isPlaying.value = false
         })
@@ -105,18 +160,21 @@ onMounted(() => {
           isPlaying.value = false
         })
       })
-      .finally(() => {
-        loading.value = false
-      });
+      .catch(() => {
+        videoLoading.value = false
+        videoError.value = true
+      })
 
   getCameraDetailApi(props.streamKey).then(res => {
     cam.value = res.data
     if (cam.value.cameraType === CAMERA_PD_TYPE) loadRois()
-  });
-});
+  })
 
-const press = (command) => requestCommand(CAMERA_COMMANDS[command])
-const release = (command) => requestCommand(CAMERA_COMMANDS.Stop, command)
+  stageObserver = new ResizeObserver(([entry]) => {
+    stageSize.value = { width: entry.contentRect.width, height: entry.contentRect.height }
+  })
+  if (stageRef.value) stageObserver.observe(stageRef.value)
+})
 
 const videoWidth = ref(0)
 const videoHeight = ref(0)
@@ -130,8 +188,6 @@ function startDrawing(ranges = []) {
     const c = canvasRef.value
     const v = videoRef.value?.querySelector('video') as HTMLVideoElement
     if (c && v) {
-      // const rect = v.getBoundingClientRect()
-
       // size canvas theo video thật
       c.width = v.clientWidth
       c.height = v.clientHeight
@@ -146,15 +202,15 @@ function startDrawing(ranges = []) {
             },
             (points) => {
               pointValues.value = points
-              emits("pointedClicked", points);
+              emits('pointedClicked', points)
               nextTick(() => {
                 if (points.length >= 3 && !drawer?.isConvex()) {
-                  drawer?.showFullScreenAlert(videoRef, t('video.notConvex'));
+                  drawer?.showFullScreenAlert(videoRef, t('video.notConvex'))
                   drawer?.clearLastPoint()
                 }
               })
             },
-        );
+        )
         if (ranges.length) {
           drawer.loadRanges(ranges)
         }
@@ -167,41 +223,42 @@ function startDrawing(ranges = []) {
 }
 
 const stopDrawing = () => {
-  drawer?.removeAllPoint();
+  drawer?.removeAllPoint()
   isDrawing.value = false
   visibleMeasurement.value = false
 
   if (timerId.value) {
-    clearInterval(timerId.value);
+    clearInterval(timerId.value)
   }
 }
 
 const clearAllPoint = () => {
-  drawer?.removeAllPoint();
+  drawer?.removeAllPoint()
 }
 
 const clearPoint = () => {
-  drawer?.removePoint();
+  drawer?.removePoint()
 }
 
-const timerId = ref(0);
+const timerId = ref(0)
 onUnmounted(() => {
   if (timerId.value) {
-    clearInterval(timerId.value);
+    clearInterval(timerId.value)
   }
-});
+  stageObserver?.disconnect()
+})
 
 function measureTemp() {
   if (timerId.value) {
-    clearInterval(timerId.value);
+    clearInterval(timerId.value)
   }
-  measureTempAction();
+  measureTempAction()
   timerId.value = setInterval(() => {
-    measureTempAction();
-  }, 10000);
+    measureTempAction()
+  }, 10000)
 }
 
-const {onRequest: measureTempRequest, isLoading: measureTempLoading} = useRequest()
+const { onRequest: measureTempRequest, isLoading: measureTempLoading } = useRequest()
 const visibleMeasurement = ref(false)
 const measurementResult = ref()
 
@@ -213,19 +270,24 @@ function measureTempAction() {
     points: pointValues.value,
   })
       .then((res) => {
-        visibleMeasurement.value = true;
-        measurementResult.value = res.data;
+        visibleMeasurement.value = true
+        measurementResult.value = res.data
       })
       .catch((e) => {
         drawer?.showFullScreenAlert(videoRef, e.toString())
       })
 }
 
+const formatTemp = (v: unknown) => (v == null || Number.isNaN(Number(v)) ? '--' : `${Number(v).toFixed(1)}°C`)
+
 const loadRanges = (ranges) => {
-  if(drawer) {
+  if (drawer) {
     drawer.loadRanges(ranges)
   }
 }
+
+// Cả màn cao vừa khung nội dung: video co giãn, không phải cuộn trang
+const { fitHeight, compact } = useFitViewportHeight(rootRef, 900)
 
 defineExpose({
   startDrawing,
@@ -236,820 +298,424 @@ defineExpose({
 })
 </script>
 <template>
-  <header class="live-header">
-    <div style="display:flex; align-items:center; gap:15px">
-      <router-link v-show="showBtnBack" class="v-btn" :title="t('video.back')"
-                   style="text-decoration: none;
-    background: rgba(255, 255, 255, 0.05);
-    width: 36px;
-    height: 36px;" to="/live">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M15 18l-6-6 6-6"></path>
-        </svg>
-      </router-link>
-      <div class="cam-title">
-        <svg width="20" height="20" viewBox="0 0 24 24" style="color:var(--primary)">
-          <path
-              d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"></path>
-        </svg>
-        <div>
-          <div style="line-height:1.2">{{ cam?.code }}</div>
-          <div style="font-size:11px; color:var(--text-sub); font-weight:400">{{ cam?.area?.name }}</div>
-        </div>
-      </div>
-    </div>
-    <div style="display:flex; gap:15px; align-items:center">
-      <div class="live-badge">LIVE FEED</div>
-      <div style="font-family:'JetBrains Mono'; font-size:13px; color:#94A3B8">{{localTime}}</div>
-    </div>
-  </header>
-  <div class="live-container">
-
-    <div class="video-wrapper">
-      <div class="video-feed">
-        <div ref="videoRef"></div>
-        <canvas
-            ref="canvasRef"
-            class="absolute"
-        >
-        </canvas>
-        <!-- Overlay ROI giám sát phóng điện (chỉ đọc) - xem CameraBatcamConfigPanel.vue (nơi vẽ/lưu ROI). -->
-        <svg
-            v-if="rois.length"
-            class="absolute inset-0 w-full h-full roi-overlay"
-            :viewBox="`0 0 ${roiNaturalWidth} ${roiNaturalHeight}`"
-            preserveAspectRatio="xMidYMid meet"
-        >
-          <rect
-              v-for="roi in rois"
-              :key="roi.roiIndex"
-              :x="(roi.cx - roi.nw / 2) * roiNaturalWidth"
-              :y="(roi.cy - roi.nh / 2) * roiNaturalHeight"
-              :width="roi.nw * roiNaturalWidth"
-              :height="roi.nh * roiNaturalHeight"
-              class="roi-shape"
-              :class="`roi-shape--${roi.roiIndex % 3}`"
-          />
-          <text
-              v-for="roi in rois"
-              :key="`roi-label-${roi.roiIndex}`"
-              :x="roi.cx * roiNaturalWidth"
-              :y="(roi.cy - roi.nh / 2) * roiNaturalHeight - 6"
-              class="roi-label"
-          >{{ roiLabel(roi) }}</text>
-        </svg>
-      </div>
-    </div>
-    <div class="sidebar">
-      <div class="ptz-section">
-        <div class="ptz-wrapper">
-          <div class="ptz-ring"></div>
-          <button
-              class="ptz-btn ptz-up"
-              @mousedown.prevent="() => press('Up')"
-              @mouseup.prevent="() => release('Up')">
-            <svg width="24" height="24" viewBox="0 0 24 24">
-              <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"></path>
-            </svg>
-          </button>
-          <button
-              class="ptz-btn ptz-down"
-              @mousedown.prevent="() => press('Down')"
-              @mouseup.prevent="() => release('Down')"
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24">
-              <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"></path>
-            </svg>
-          </button>
-          <button
-              class="ptz-btn ptz-left"
-              @mousedown.prevent="() => press('Left')"
-              @mouseup.prevent="() => release('Left')"
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24">
-              <path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path>
-            </svg>
-          </button>
-          <button
-              class="ptz-btn ptz-right"
-              @mousedown.prevent="() => press('Right')"
-              @mouseup.prevent="() => release('Right')"
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24">
-              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"></path>
-            </svg>
-          </button>
-          <button @click="() => requestCommand(CAMERA_COMMANDS.Calibration)" class="ptz-center">RESET</button>
-        </div>
-
-        <div class="slider-group">
-          <div style="font-size:12px; color:var(--text-sub); width:60px; font-weight:600">{{ t('video.speed') }}</div>
-          <span style="font-size:12px; color:var(--text-sub)">1</span>
-          <input v-model="speed" type="range" min="1" max="5" class="custom-slider">
-          <span style="font-size:12px; color:var(--text-sub)">5</span>
-          <span
-              style="font-size:13px; color:var(--primary); width:20px; text-align:right; font-weight:700">{{
-              speed
-            }}</span>
-        </div>
-
-        <div class="slider-group" style="margin-top:10px">
-          <div style="font-size:12px; color:var(--text-sub); width:60px; font-weight:600">Zoom</div>
-          <div style="display:flex; gap:10px; flex:1">
-            <button class="v-btn" style="background:#334155; flex:1; height:40px" :title="t('video.zoomIn')"
-                    @click="() => requestCommand(CAMERA_COMMANDS.ZoomIn)">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                   stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                <line x1="11" y1="8" x2="11" y2="14"></line>
-                <line x1="8" y1="11" x2="14" y2="11"></line>
-              </svg>
-            </button>
-            <button class="v-btn" style="background:#334155; flex:1; height:40px" :title="t('video.zoomOut')"
-                    @click="() => requestCommand(CAMERA_COMMANDS.ZoomOut)">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                   stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                <line x1="8" y1="11" x2="14" y2="11"></line>
-              </svg>
-            </button>
+  <div
+    ref="rootRef"
+    class="live"
+    :class="{ 'live--fit': fitHeight && !compact }"
+    :style="fitHeight && !compact ? { height: `${fitHeight}px` } : undefined"
+  >
+    <header class="live__header">
+      <div class="live__title-group">
+        <router-link v-show="showBtnBack" class="live__back" :title="t('video.back')" to="/live">
+          <el-icon><ArrowLeft/></el-icon>
+        </router-link>
+        <div class="live__title">
+          <div class="live__code">{{ cam?.name || cam?.code }}</div>
+          <div class="live__area">
+            <span v-if="cam?.name && cam?.code">{{ cam.code }}</span>
+            <span v-if="cam?.area?.name">{{ cam.area.name }}</span>
           </div>
         </div>
-        <slot name="sidebar">
-          <!-- Measure Temp Section -->
-          <div style="margin-top:20px; padding-top:20px; border-top:1px solid var(--border); width:100%">
-            <div
-                style="font-size:11px; font-weight:700; color:var(--text-sub); margin-bottom:12px; text-transform:uppercase;">
-              {{ t('video.measureTitle') }}
-            </div>
+      </div>
+      <div class="live__meta">
+        <el-tooltip v-if="aiStreamMissing" :content="t('video.aiStreamMissingHint')" placement="bottom">
+          <span class="live__chip live__chip--warn">{{ t('video.aiStreamMissing') }}</span>
+        </el-tooltip>
+        <span v-else-if="cam?.aiStreamEnabled" class="live__chip live__chip--ai">{{ t('video.aiStreamOn') }}</span>
+        <span class="live__chip live__chip--live">LIVE</span>
+        <span class="live__clock">{{ localTime }}</span>
+      </div>
+    </header>
 
-            <!-- Start Button -->
-            <div v-show="isDrawing===false">
-              <button class="v-btn action-btn-primary" @click="() => startDrawing()">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                     stroke-linecap="round" stroke-linejoin="round">
-                  <polygon points="14 2 18 6 7 17 3 17 3 13 14 2"></polygon>
-                  <line x1="3" y1="22" x2="21" y2="22"></line>
-                </svg>
-                {{ t('video.drawPointArea') }}
-              </button>
+    <div class="live__body">
+      <!-- Vùng video: nền đen, hình giữ đúng tỷ lệ -->
+      <section ref="stageRef" class="live__stage">
+        <div class="live__feed" :style="feedStyle">
+          <div ref="videoRef" class="live__video"></div>
+          <canvas ref="canvasRef" class="live__canvas" :class="{ 'is-drawing': isDrawing }"></canvas>
+          <!-- Overlay ROI giám sát phóng điện (chỉ đọc) - xem CameraBatcamConfigPanel.vue (nơi vẽ/lưu ROI). -->
+          <svg
+              v-if="rois.length"
+              class="live__roi"
+              :viewBox="`0 0 ${roiNaturalWidth} ${roiNaturalHeight}`"
+              preserveAspectRatio="xMidYMid meet"
+          >
+            <rect
+                v-for="roi in rois"
+                :key="roi.roiIndex"
+                :x="(roi.cx - roi.nw / 2) * roiNaturalWidth"
+                :y="(roi.cy - roi.nh / 2) * roiNaturalHeight"
+                :width="roi.nw * roiNaturalWidth"
+                :height="roi.nh * roiNaturalHeight"
+                class="roi-shape"
+                :class="`roi-shape--${roi.roiIndex % 3}`"
+            />
+            <text
+                v-for="roi in rois"
+                :key="`roi-label-${roi.roiIndex}`"
+                :x="roi.cx * roiNaturalWidth"
+                :y="(roi.cy - roi.nh / 2) * roiNaturalHeight - 6"
+                class="roi-label"
+            >{{ roiLabel(roi) }}</text>
+          </svg>
+        </div>
+        <div v-if="videoLoading" v-loading="true" class="live__state" element-loading-background="transparent"></div>
+        <div v-else-if="videoError" class="live__state live__state--error">{{ t('video.streamError') }}</div>
+        <div v-if="isDrawing" class="live__draw-hint">{{ t('video.drawHint') }}</div>
+      </section>
+
+      <aside class="live__panel">
+        <!-- Điều khiển PTZ -->
+        <div v-if="isPtz" class="live__card">
+          <div class="live__card-head">
+            <span class="live__card-title">{{ t('video.ctlDirection') }}</span>
+            <el-tooltip :content="t('video.ctlHoldHint')" placement="left">
+              <span class="live__help">?</span>
+            </el-tooltip>
+          </div>
+          <div class="live__dpad" role="group" :aria-label="t('video.ctlDirection')">
+            <button
+                v-for="d in directions"
+                :key="d.command"
+                type="button"
+                class="live__dir"
+                :class="{ 'is-diagonal': d.rotation % 90 !== 0 }"
+                :aria-label="d.command"
+                :style="{ gridRow: d.row, gridColumn: d.column, '--rot': `${d.rotation}deg` }"
+                @pointerdown.prevent="startCommand(d.command)"
+                @pointerup="stopCommand"
+                @pointerleave="stopCommand"
+                @pointercancel="stopCommand"
+            >
+              <el-icon><CaretTop/></el-icon>
+            </button>
+            <span class="live__dpad-center">PTZ</span>
+          </div>
+
+          <div class="live__field">
+            <div class="live__card-head">
+              <span class="live__label">{{ t('video.rotationSpeed') }}</span>
+              <span class="live__value">{{ speedPercent }}%</span>
             </div>
-            <!-- Active Actions (Hidden by default) -->
-            <div v-show="isDrawing===true" style="display: grid; gap: 12px; grid-template-columns: 1.5fr 1fr;">
-              <el-button class="v-btn"
-                         :loading="measureTempLoading"
-                         @click="measureTemp"
-                         style="background:#3B82F6; color:white; width:100%; height:44px; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:6px; font-weight:600; font-size:13px; border:none">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
-                </svg>
+            <el-slider
+                v-model="speedPercent"
+                :min="0"
+                :max="100"
+                :step="PTZ_SPEED_STEP_PERCENT"
+                :format-tooltip="(v: number) => `${v}%`"
+            />
+          </div>
+
+        </div>
+
+        <!-- Thu phóng: hiện cho mọi loại camera (camera cố định vẫn có thể có zoom quang) -->
+        <div class="live__card">
+          <span class="live__card-title">{{ t('video.ctlZoom') }}</span>
+          <div class="live__row">
+            <el-button
+                :icon="ZoomIn"
+                @pointerdown.prevent="startCommand('ZoomIn')"
+                @pointerup="stopCommand"
+                @pointerleave="stopCommand"
+                @pointercancel="stopCommand"
+            >{{ t('video.zoomIn') }}</el-button>
+            <el-button
+                :icon="ZoomOut"
+                @pointerdown.prevent="startCommand('ZoomOut')"
+                @pointerup="stopCommand"
+                @pointerleave="stopCommand"
+                @pointercancel="stopCommand"
+            >{{ t('video.zoomOut') }}</el-button>
+          </div>
+        </div>
+
+        <slot name="sidebar">
+          <!-- Đo nhiệt độ theo vùng vẽ trên hình -->
+          <div class="live__card">
+            <span class="live__card-title">{{ t('video.measureTitle') }}</span>
+            <el-button v-if="!isDrawing" class="live__full" type="primary" plain :icon="Edit" @click="() => startDrawing()">
+              {{ t('video.drawPointArea') }}
+            </el-button>
+            <div v-else class="live__row">
+              <el-button type="primary" :icon="Odometer" :loading="measureTempLoading" @click="measureTemp">
                 {{ t('video.measure') }}
               </el-button>
-              <button class="v-btn" @click="stopDrawing"
-                      style="background:rgba(239, 68, 68, 0.15); border:1px solid rgba(239, 68, 68, 0.5); color:#EF4444; width:100%; height:44px; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:6px; font-weight:600; font-size:13px">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-                {{ t('video.exit') }}
-              </button>
+              <el-button type="danger" plain :icon="Close" @click="stopDrawing">{{ t('video.exit') }}</el-button>
             </div>
 
-            <!-- Measurement Results (Hidden by default) -->
-            <div v-show="visibleMeasurement" style="margin-top:15px; animation: fadeIn 0.3s ease-in-out;">
-              <div style="font-size:13px; color:var(--text-sub); margin-bottom:10px;">{{ t('video.measureResult') }}</div>
-              <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px;">
-                <!-- Max -->
-                <div
-                    style="background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.3); border-radius:8px; padding:10px; text-align:center;">
-                  <div style="font-size:11px; color:#EF4444; font-weight:600; margin-bottom:4px;">Max
-                  </div>
-                  <div style="font-family:'JetBrains Mono'; font-size:16px; font-weight:700; color:#EF4444;">
-                    {{ Number(measurementResult?.maxTemperature).toFixed(1) }}°C
-                  </div>
-                </div>
-                <!-- Avg -->
-                <div
-                    style="background:rgba(245, 158, 11, 0.1); border:1px solid rgba(245, 158, 11, 0.3); border-radius:8px; padding:10px; text-align:center;">
-                  <div style="font-size:11px; color:#F59E0B; font-weight:600; margin-bottom:4px;">Avg
-                  </div>
-                  <div style="font-family:'JetBrains Mono'; font-size:16px; font-weight:700; color:#F59E0B;">
-                    {{ Number(measurementResult?.aveTemperature).toFixed(1) }}°C
-                  </div>
-                </div>
-                <!-- Min -->
-                <div
-                    style="background:rgba(16, 185, 129, 0.1); border:1px solid rgba(16, 185, 129, 0.3); border-radius:8px; padding:10px; text-align:center;">
-                  <div style="font-size:11px; color:#10B981; font-weight:600; margin-bottom:4px;">Min
-                  </div>
-                  <div style="font-family:'JetBrains Mono'; font-size:16px; font-weight:700; color:#10B981;">
-                    {{ Number(measurementResult?.minTemperature).toFixed(1) }}°C
-                  </div>
-                </div>
+            <div v-show="visibleMeasurement" class="live__temps">
+              <div class="live__temp live__temp--max">
+                <span>Max</span>
+                <strong>{{ formatTemp(measurementResult?.maxTemperature) }}</strong>
+              </div>
+              <div class="live__temp live__temp--avg">
+                <span>Avg</span>
+                <strong>{{ formatTemp(measurementResult?.aveTemperature) }}</strong>
+              </div>
+              <div class="live__temp live__temp--min">
+                <span>Min</span>
+                <strong>{{ formatTemp(measurementResult?.minTemperature) }}</strong>
               </div>
             </div>
           </div>
 
-          <!-- Bottom Toolbar -->
-          <div style="margin-top:20px; padding-top:20px; border-top:1px solid var(--border); width:100%">
-            <div
-                style="font-size:11px; font-weight:700; color:var(--text-sub); margin-bottom:12px; text-transform:uppercase;">
-              {{ t('video.controlTitle') }}
+          <!-- Thiết bị -->
+          <div class="live__card">
+            <span class="live__card-title">{{ t('video.ctlDevice') }}</span>
+            <div class="live__row">
+              <el-button type="warning" plain :icon="SwitchButton" :loading="running === 'Restart'" @click="confirmSend('Restart', 'video.ctlRestartConfirm')">
+                {{ t('video.restart') }}
+              </el-button>
+              <el-button v-if="isPtz" plain :icon="Setting" :loading="running === 'Calibration'" @click="confirmSend('Calibration', 'video.ctlCalibrationConfirm')">
+                {{ t('video.ctlCalibration') }}
+              </el-button>
             </div>
-
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
-              <button class="v-btn action-btn-danger" :title="t('video.power')"
-                      @click="() => requestCommand(CAMERA_COMMANDS.Restart)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                     stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
-                  <line x1="12" y1="2" x2="12" y2="12"></line>
-                </svg>
-                {{ t('video.powerLabel') }}
-              </button>
-              <button class="v-btn action-btn-secondary" :title="t('video.cameraSettings')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                     stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="3"></circle>
-                  <path
-                      d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
-                  </path>
-                </svg>
-                {{ t('video.settings') }}
-              </button>
-            </div>
+            <router-link v-if="cam?.id" class="live__link" :to="{ name: 'camera_setting', params: { id: cam.id } }">
+              <el-icon><Setting/></el-icon>{{ t('video.cameraSettings') }}
+            </router-link>
           </div>
         </slot>
-      </div>
+      </aside>
     </div>
   </div>
 </template>
 <style scoped>
-/* Action Buttons Modern Style */
-.action-btn-primary,
-.action-btn-danger,
-.action-btn-secondary {
-  width: 100%;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border-radius: 8px;
-  /* Slightly more rounded */
-  font-weight: 600;
-  font-size: 13px;
-  transition: all 0.2s ease;
-  text-transform: capitalize;
-  letter-spacing: 0.3px;
-}
-
-.action-btn-primary {
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.4);
-  color: var(--primary);
-}
-
-.action-btn-primary:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: var(--primary);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
-}
-
-.action-btn-danger {
-  background: var(--danger);
-  color: white;
-  border: 1px solid var(--danger);
-  box-shadow: 0 4px 6px rgba(239, 68, 68, 0.25);
-}
-
-.action-btn-danger:hover {
-  background: #DC2626;
-  /* Darker red */
-  transform: translateY(-1px);
-  box-shadow: 0 6px 12px rgba(239, 68, 68, 0.35);
-}
-
-.action-btn-secondary {
-  background: #334155;
-  border: 1px solid var(--border);
-  color: white;
-}
-
-.action-btn-secondary:hover {
-  background: #475569;
-  border-color: #94a3b8;
-  transform: translateY(-1px);
-}
-
-:root {
-  --bg-body: #0F172A;
-  --bg-panel: #1E293B;
-  --border: #334155;
-  --text-main: #F8FAFC;
-  --text-sub: #94A3B8;
-  --primary: #3B82F6;
-  --danger: #EF4444;
-  --success: #10B981;
-  --warning: #F59E0B;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  background-color: var(--bg-body);
-  color: var(--text-main);
-  font-family: 'Inter', sans-serif;
-  margin: 0;
-  height: 100vh;
+.live {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
 }
 
 /* HEADER */
-.live-header {
-  height: 50px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
+.live__header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.live__title-group { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.live__back {
+  display: grid;
   flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-sub);
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s;
 }
-
-.cam-title {
-  font-weight: 600;
-  font-size: 14px;
-  display: flex;
+.live__back:hover { border-color: var(--el-color-primary); color: var(--el-color-primary); }
+.live__title { min-width: 0; }
+.live__code { overflow: hidden; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.live__area { display: flex; gap: 8px; color: var(--text-sub); font-size: 12px; }
+.live__area span + span::before { margin-right: 8px; content: '·'; }
+.live__meta { display: flex; flex-shrink: 0; align-items: center; gap: 10px; }
+.live__chip {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-}
-
-.live-badge {
-  background: var(--danger);
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10px;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
-  animation: blink 2s infinite;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
-
-.live-badge::before {
-  content: '';
+.live__chip--live { background: rgb(239 68 68 / 15%); color: #ef4444; }
+.live__chip--live::before {
   width: 6px;
   height: 6px;
-  background: white;
   border-radius: 50%;
+  background: currentColor;
+  animation: live-blink 1.6s infinite;
+  content: '';
 }
+.live__chip--ai { background: rgb(16 185 129 / 15%); color: #10b981; }
+.live__chip--warn { background: rgb(245 158 11 / 15%); color: #f59e0b; cursor: help; }
+.live__clock { color: var(--text-sub); font-family: 'JetBrains Mono', monospace; font-size: 13px; font-variant-numeric: tabular-nums; }
+@keyframes live-blink { 50% { opacity: 0.3; } }
 
-@keyframes blink {
-  50% {
-    opacity: 0.7;
-  }
-}
-
-/* MAIN LAYOUT */
-.live-container {
+/* BODY: video | bảng điều khiển */
+.live__body {
   display: grid;
-  grid-template-columns: 1fr 320px;
-  /* Video | Controls */
   flex: 1;
-  height: unset;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  min-height: 0;
 }
 
-/* --- VIDEO AREA --- */
-.video-wrapper {
+.live__stage {
   position: relative;
-  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: #000;
 }
-
-.video-feed {
-  position: relative;
-  display: inline-block;
-}
-
-.video-feed video {
-  display: block;
-}
-
-.video-feed canvas {
+/* Khung hẹp (xếp dọc): video theo tỷ lệ 16:9 của chiều rộng */
+.live:not(.live--fit) .live__stage { aspect-ratio: 16 / 9; }
+.live__feed { position: relative; width: 100%; height: 100%; }
+.live__video,
+.live__video :deep(video-stream) { display: block; width: 100%; height: 100%; }
+.live__video :deep(video) { display: block; width: 100% !important; height: 100% !important; object-fit: contain; }
+.live__canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+.live__canvas.is-drawing { cursor: crosshair; pointer-events: auto; }
+.live__state { position: absolute; inset: 0; display: grid; place-items: center; }
+.live__state--error { color: #94a3b8; font-size: 13px; }
+.live__draw-hint {
   position: absolute;
-  top: 0;
-  left: 0;
-}
-
-/* Overlay ROI - màu cố định (không theo theme trang), đè lên video giống mọi overlay video khác. */
-.roi-overlay {
-  top: 0;
-  left: 0;
-  z-index: 2;
-  pointer-events: none;
-}
-.roi-shape {
-  fill: rgba(64, 158, 255, 0.15);
-  stroke: #409eff;
-  stroke-width: 3;
-}
-.roi-shape--1 {
-  fill: rgba(103, 194, 58, 0.15);
-  stroke: #67c23a;
-}
-.roi-shape--2 {
-  fill: rgba(230, 162, 60, 0.15);
-  stroke: #e6a23c;
-}
-.roi-label {
-  fill: #fff;
-  font-size: 20px;
-  text-anchor: middle;
-  paint-order: stroke;
-  stroke: #000;
-  stroke-width: 4px;
-}
-
-/* HUD Overlay (Lớp phủ thông tin) */
-.hud-overlay {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-/* Bounding Box thông minh */
-.hud-box {
-  position: absolute;
-  border: 2px solid rgba(59, 130, 246, 0.6);
-  background: rgba(59, 130, 246, 0.05);
-  cursor: pointer;
-  pointer-events: auto;
-  transition: 0.2s;
-}
-
-.hud-box:hover {
-  border-color: var(--warning);
-  background: rgba(245, 158, 11, 0.1);
-  z-index: 10;
-}
-
-/* Label chỉ hiện khi hover hoặc mode chi tiết */
-.hud-label {
-  position: absolute;
-  bottom: 100%;
-  left: -2px;
-  background: rgba(15, 23, 42, 0.9);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 4px 8px;
-  font-size: 11px;
-  white-space: nowrap;
-  border-radius: 4px 4px 4px 0;
-  font-family: 'JetBrains Mono';
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  opacity: 0;
-  transition: 0.2s;
-  pointer-events: none;
-}
-
-.hud-box:hover .hud-label,
-.hud-box.alert .hud-label {
-  opacity: 1;
-}
-
-.hud-val {
-  font-weight: 700;
-  color: var(--success);
-}
-
-.hud-box.alert {
-  border-color: var(--danger);
-  box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
-  animation: pulseBorder 2s infinite;
-}
-
-.hud-box.alert .hud-val {
-  color: var(--danger);
-}
-
-@keyframes pulseBorder {
-  50% {
-    border-color: rgba(239, 68, 68, 0.3);
-  }
-}
-
-/* Video Controls (Bottom Bar floating) */
-.video-controls {
-  position: absolute;
-  bottom: 20px;
+  top: 12px;
   left: 50%;
-  transform: translateY(-50%);
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 8px 12px;
-  border-radius: 12px;
-  display: flex;
-  gap: 10px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
-}
-
-.v-btn {
-  border: none;
-  color: var(--text-main);
-  cursor: pointer;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: 0.2s;
-}
-
-.v-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--primary);
-}
-
-.v-btn.active {
-  background: rgba(239, 68, 68, 0.2);
-  color: var(--danger);
-}
-
-/* --- SIDEBAR CONTROLS --- */
-.sidebar {
-  background: var(--bg-panel);
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  z-index: 2;
-}
-
-/* 1. PTZ Controller (Joystick Modern) */
-.ptz-section {
-  padding: 24px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 100%);
-}
-
-.ptz-wrapper {
-  position: relative;
-  width: 140px;
-  height: 140px;
-  margin-bottom: 20px;
-}
-
-.ptz-ring {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  position: absolute;
-  top: 0;
-  left: 0;
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.3);
-}
-
-.ptz-btn {
-  position: absolute;
-  width: 40px;
-  height: 40px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--text-sub);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: 0.2s;
-}
-
-.ptz-btn:hover {
-  color: var(--primary);
-  transform: scale(1.1);
-}
-
-.ptz-up {
-  top: -5px;
-  left: 35%;
-  transform: translateY(50%);
-}
-
-.ptz-down {
-  bottom: -7px;
-  left: 35%;
-  transform: translateY(-50%);
-}
-
-.ptz-left {
-  left: -5px;
-  top: 35%;
-  transform: translateX(50%);
-}
-
-.ptz-right {
-  right: -5px;
-  top: 35%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgb(15 23 42 / 80%);
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
   transform: translateX(-50%);
 }
 
-.ptz-center {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  background: #334155;
-  color: white;
-  font-weight: 700;
-  font-size: 10px;
+/* Overlay ROI - màu cố định (không theo theme trang), đè lên video giống mọi overlay video khác. */
+.live__roi { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; pointer-events: none; }
+.roi-shape { fill: rgb(64 158 255 / 15%); stroke: #409eff; stroke-width: 3; }
+.roi-shape--1 { fill: rgb(103 194 58 / 15%); stroke: #67c23a; }
+.roi-shape--2 { fill: rgb(230 162 60 / 15%); stroke: #e6a23c; }
+.roi-label { fill: #fff; font-size: 20px; text-anchor: middle; paint-order: stroke; stroke: #000; stroke-width: 4px; }
+
+/* PANEL */
+.live__panel {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+}
+.live__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--el-fill-color-lighter);
+}
+.live__card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.live__card-title {
+  color: var(--text-sub);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.live__help {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-sub);
+  font-size: 11px;
+  cursor: help;
+}
+.live__field { display: flex; flex-direction: column; gap: 4px; }
+.live__label { color: var(--text-sub); font-size: 12px; font-weight: 600; }
+.live__value { color: var(--el-color-primary); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.live__field :deep(.el-slider) { height: 28px; padding: 0 8px; }
+.live__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; }
+.live__row :deep(.el-button),
+.live__full { width: 100%; margin: 0; }
+.live__link {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  cursor: pointer;
+  gap: 6px;
+  color: var(--el-color-primary);
+  font-size: 13px;
+  text-decoration: none;
 }
+.live__link:hover { text-decoration: underline; }
 
-.ptz-center:active {
-  transform: translate(-50%, -50%) scale(0.95);
-  background: var(--primary);
-}
-
-/* Zoom/Focus Bars */
-.slider-group {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.slider-icon {
-  color: var(--text-sub);
-  width: 20px;
-}
-
-.slider-track {
-  flex: 1;
-  height: 4px;
-  background: #334155;
-  border-radius: 2px;
-  position: relative;
-  cursor: pointer;
-}
-
-.slider-fill {
-  width: 40%;
-  height: 100%;
-  background: var(--primary);
-  border-radius: 2px;
-}
-
-.slider-thumb {
-  position: absolute;
-  left: 40%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 12px;
-  height: 12px;
-  background: white;
+/* D-pad tròn */
+.live__dpad {
+  display: grid;
+  width: 156px;
+  height: 156px;
+  margin: 2px auto 4px;
+  grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+  place-items: center;
+  border: 1px solid var(--el-border-color);
   border-radius: 50%;
-  box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+  background: radial-gradient(circle at 50% 40%, var(--el-fill-color-light), var(--el-fill-color-darker));
+  touch-action: none;
+  user-select: none;
 }
-
-/* 2. Real-time Data List */
-.list-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+.live__dir {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--el-color-primary);
+  cursor: pointer;
+  touch-action: none;
+  transition: background-color 0.15s, transform 0.1s;
 }
-
-.list-header {
-  padding: 12px 15px;
+.live__dir .el-icon { font-size: 24px; transform: rotate(var(--rot)); }
+.live__dir.is-diagonal .el-icon { font-size: 17px; }
+.live__dir:hover { background: var(--el-color-primary-light-8); }
+.live__dir:active { background: var(--el-color-primary); color: #fff; transform: scale(0.94); }
+.live__dir:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.live__dpad-center {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  grid-area: 2 / 2;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #5ba9e0, #1d5da8);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 35%);
+  color: #fff;
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-sub);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
 }
 
-.data-list {
-  overflow-y: auto;
-  padding: 0;
-}
-
-.data-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 15px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.data-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  padding-left: 20px;
-}
-
-.data-item.active {
-  background: rgba(59, 130, 246, 0.1);
-  border-left: 3px solid var(--primary);
-}
-
-.item-name {
-  font-size: 13px;
-  font-weight: 500;
+/* Kết quả đo */
+.live__temps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.live__temp {
   display: flex;
   flex-direction: column;
-}
-
-.item-sub {
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
   font-size: 11px;
-  color: var(--text-sub);
-  margin-top: 2px;
+  font-weight: 600;
 }
+.live__temp strong { font-family: 'JetBrains Mono', monospace; font-size: 14px; }
+.live__temp--max { background: rgb(239 68 68 / 10%); color: #ef4444; }
+.live__temp--avg { background: rgb(245 158 11 / 10%); color: #f59e0b; }
+.live__temp--min { background: rgb(16 185 129 / 10%); color: #10b981; }
 
-.item-val {
-  font-family: 'JetBrains Mono';
-  font-weight: 700;
-  font-size: 13px;
-  color: var(--success);
-}
-
-.item-val.hot {
-  color: var(--danger);
-}
-
-.ptz-btn{
-  svg {
-    fill: currentColor;
-  }
-}
-
-
-/* Custom Range Slider */
-.custom-slider {
-  -webkit-appearance: none;
-  width: 100%;
-  height: 4px;
-  background: #334155;
-  border-radius: 2px;
-  outline: none;
-  flex: 1;
-}
-
-.custom-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--primary);
-  cursor: pointer;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
-  transition: 0.2s;
-}
-
-.custom-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
-}
-
-.custom-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--primary);
-  cursor: pointer;
-  border: none;
+/* Khung hẹp: video trên, bảng điều khiển dưới, cuộn trang bình thường */
+.live:not(.live--fit) .live__body { grid-template-columns: minmax(0, 1fr); }
+.live:not(.live--fit) .live__panel { border-top: 1px solid var(--border); border-left: 0; overflow: visible; }
+@media (max-width: 640px) {
+  .live__clock { display: none; }
 }
 </style>

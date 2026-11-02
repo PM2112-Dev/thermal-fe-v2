@@ -58,3 +58,31 @@ export const defaultLevels = [
                             </svg>`
   },
 ]
+
+// Mức 4 (Nguy hiểm) không có trần - "đến +∞". BE xếp mức theo "mốc nhỏ nhất còn > giá trị đo"
+// (AnalyzeDataService.appreciateThermalData, PdDataRepository.MatchThreshold) và cột max_temperature
+// là int, nên lưu int.MaxValue thay cho vô cùng: mọi giá trị vượt mức 3 đều rơi vào mức 4.
+export const UNBOUNDED_MAX = 2147483647
+
+// BE serialize enum dạng chuỗi (StringEnumConverter) nên dữ liệu đã lưu trả về level = "Bad",
+// còn ngưỡng FE vừa tạo (buildDefaultThresholds) mang số 4 - phải nhận cả hai.
+export function isUnboundedLevel(level: number | string) {
+  return level === TEMPERATURE_LEVEL_BAD || level === 'Bad'
+}
+
+export function buildDefaultThresholds(thresholdType: number) {
+  return defaultLevels.map((levelItem) => ({
+    maxTemperature: isUnboundedLevel(levelItem.level) ? UNBOUNDED_MAX : 0,
+    thresholdType,
+    level: levelItem.level,
+  }))
+}
+
+// Dữ liệu cũ có thể còn trần mức 4 do người dùng nhập tay - ép về UNBOUNDED_MAX.
+export function applyUnboundedMax(mode: any) {
+  for (const threshold of mode?.temperatureThresholds ?? []) {
+    if (isUnboundedLevel(threshold.level) && threshold.maxTemperature !== UNBOUNDED_MAX) {
+      threshold.maxTemperature = UNBOUNDED_MAX
+    }
+  }
+}

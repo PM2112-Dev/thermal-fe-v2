@@ -57,7 +57,7 @@
             <line x1="14" y1="11" x2="14" y2="17"></line>
           </svg>
         </button>
-        <button class="action-btn-circle btn-gray-outline" :title="t('camera.aiSettings')"
+        <button v-if="hasAiManagement()" class="action-btn-circle btn-gray-outline" :title="t('camera.aiSettings')"
                 @click="() => emits('showAISetting', row)">
           <el-icon>
             <Notification/>
@@ -69,6 +69,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePermission } from '@/hooks/web/usePermission'
 import { enumLabel } from '@/utils/enumLabel'
 import { useLang } from '@/hooks/web/useI18n'
 import type {TableColumn} from '@/components/Table/TableCard.vue'
@@ -84,6 +85,8 @@ defineProps<{
   index: number
   loading: boolean
 }>()
+
+const { hasAiManagement } = usePermission()
 
 const emits = defineEmits(['edit', 'delete', 'syncPresets', 'showPresets', 'showVisionPresets', 'showPresetSetting', 'showAISetting', 'redirectDetail'])
 

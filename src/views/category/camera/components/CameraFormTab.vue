@@ -17,6 +17,12 @@
             class="mt-4"
           ></set-viewing-angle>
         </el-tab-pane>
+        <el-tab-pane v-if="isEditing && !isPdCamera" :label="t('camera.tabOnvif')" name="onvif" lazy>
+          <camera-onvif-panel :camera="formModel"></camera-onvif-panel>
+        </el-tab-pane>
+        <el-tab-pane v-if="isEditing && !isPdCamera" :label="t('camera.tabAlarm')" name="alarm" lazy>
+          <camera-alarm-panel :camera="formModel"></camera-alarm-panel>
+        </el-tab-pane>
         <el-tab-pane v-if="isEditing && isPdCamera" :label="t('camera.tabPdConfig')" name="fifth">
           <camera-batcam-config-panel :form-model="formModel"></camera-batcam-config-panel>
         </el-tab-pane>
@@ -31,6 +37,8 @@ import {computed, ref} from 'vue'
 import {isFormEditing} from '@/utils/is'
 import SetViewingAngle from '@/views/category/camera/components/SetViewingAngle.vue'
 import CameraForm from '@/views/category/camera/components/CameraForm.vue'
+import CameraOnvifPanel from '@/views/category/camera/components/CameraOnvifPanel.vue'
+import CameraAlarmPanel from '@/views/category/camera/components/CameraAlarmPanel.vue'
 import CameraBatcamConfigPanel from '@/views/category/camera/components/CameraBatcamConfigPanel.vue'
 import { CAMERA_PD_TYPE } from '@/constants'
 

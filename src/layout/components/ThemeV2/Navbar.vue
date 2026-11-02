@@ -9,8 +9,10 @@ import { useDialogForm } from '@/hooks/web/useDialogForm.tsx'
 import { useUserStore } from '@/store/modules/user.ts'
 import { useLang } from '@/hooks/web/useI18n.ts'
 import { useRoute } from 'vue-router'
+import { usePermission } from '@/hooks/web/usePermission'
 
 const appStore = useAppStore()
+const { hasPermission } = usePermission()
 const visibleDropdown = ref(false)
 const toggleUserDropdown = () => {
   visibleDropdown.value = !visibleDropdown.value
@@ -189,7 +191,7 @@ function isPrefixActive(prefix) {
         <div
           :class="[
             'nav-link',
-            isPrefixActive('/category') || isPrefixActive('/setting') ? 'active-link' : '',
+            isPrefixActive('/category') || isPrefixActive('/setting') || isPrefixActive('/ai') ? 'active-link' : '',
           ]"
         >
           {{ t('layout.menu.admin') }}
@@ -198,24 +200,26 @@ function isPrefixActive(prefix) {
           </svg>
         </div>
         <div class="dropdown-menu mega-menu">
-          <div class="mega-col">
+          <div v-if="hasPermission(['area', 'camera-list', 'camera-sensor', 'machine-type', 'machine-list', 'camera-brand-list', 'province'])" class="mega-col">
             <div class="col-header">{{ t('layout.menu.infrastructure') }}</div>
-            <router-link class="menu-link" to="/category/area">{{ t('layout.menu.area') }}</router-link>
-            <router-link class="menu-link" to="/category/camera-list">{{ t('layout.menu.camera') }}</router-link>
-            <router-link class="menu-link" to="/category/camera-sensor">{{ t('layout.menu.sensor') }}</router-link>
-            <router-link class="menu-link" to="/category/machine-type">{{ t('layout.menu.equipmentType') }}</router-link>
-            <router-link class="menu-link" to="/category/machine-list">{{ t('layout.menu.equipment') }}</router-link>
+            <router-link v-if="hasPermission(['area'])" class="menu-link" to="/category/area">{{ t('layout.menu.area') }}</router-link>
+            <router-link v-if="hasPermission(['province'])" class="menu-link" to="/category/province">{{ t('layout.menu.province') }}</router-link>
+            <router-link v-if="hasPermission(['camera-list'])" class="menu-link" to="/category/camera-list">{{ t('layout.menu.camera') }}</router-link>
+            <router-link v-if="hasPermission(['camera-brand-list'])" class="menu-link" to="/category/camera-brand">{{ t('layout.menu.cameraBrand') }}</router-link>
+            <router-link v-if="hasPermission(['camera-sensor'])" class="menu-link" to="/category/camera-sensor">{{ t('layout.menu.sensor') }}</router-link>
+            <router-link v-if="hasPermission(['machine-type'])" class="menu-link" to="/category/machine-type">{{ t('layout.menu.equipmentType') }}</router-link>
+            <router-link v-if="hasPermission(['machine-list'])" class="menu-link" to="/category/machine-list">{{ t('layout.menu.equipment') }}</router-link>
           </div>
-          <div class="mega-col">
+          <div v-if="hasPermission(['notification-channel', 'notification-group', 'settings'])" class="mega-col">
             <div class="col-header">{{ t('layout.menu.alertSettings') }}</div>
-            <router-link class="menu-link menu-item-with-bg" to="/setting/notification-channel">
+            <router-link v-if="hasPermission(['notification-channel'])" class="menu-link menu-item-with-bg" to="/setting/notification-channel">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
               </svg>
               {{ t('layout.menu.alertChannel') }}
             </router-link>
 
-            <router-link class="menu-link menu-item-with-bg" to="/setting/notification-group">
+            <router-link v-if="hasPermission(['notification-group'])" class="menu-link menu-item-with-bg" to="/setting/notification-group">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
                 <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
@@ -225,7 +229,7 @@ function isPrefixActive(prefix) {
               {{ t('layout.menu.alertGroup') }}
             </router-link>
 
-            <router-link class="menu-link menu-item-with-bg" to="/category/settings">
+            <router-link v-if="hasPermission(['settings'])" class="menu-link menu-item-with-bg" to="/category/settings">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M4 17l6-11h4l6 11"></path>
                 <path d="M8 12h8"></path>
@@ -233,9 +237,34 @@ function isPrefixActive(prefix) {
               {{ t('layout.menu.pdFormula') }}
             </router-link>
           </div>
+          <div v-if="hasPermission(['ai-feature-list', 'ai-model-list'])" class="mega-col">
+            <div class="col-header">{{ t('layout.menu.aiManagement') }}</div>
+            <router-link v-if="hasPermission(['ai-feature-list'])" class="menu-link menu-item-with-bg" to="/ai/feature-list">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="8" y1="6" x2="21" y2="6"></line>
+                <line x1="8" y1="12" x2="21" y2="12"></line>
+                <line x1="8" y1="18" x2="21" y2="18"></line>
+                <circle cx="4" cy="6" r="1"></circle>
+                <circle cx="4" cy="12" r="1"></circle>
+                <circle cx="4" cy="18" r="1"></circle>
+              </svg>
+              {{ t('layout.menu.aiFeature') }}
+            </router-link>
+            <router-link v-if="hasPermission(['ai-model-list'])" class="menu-link menu-item-with-bg" to="/ai/model-list">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                <rect x="9" y="9" width="6" height="6"></rect>
+                <line x1="9" y1="1" x2="9" y2="4"></line>
+                <line x1="15" y1="1" x2="15" y2="4"></line>
+                <line x1="9" y1="20" x2="9" y2="23"></line>
+                <line x1="15" y1="20" x2="15" y2="23"></line>
+              </svg>
+              {{ t('layout.menu.aiModel') }}
+            </router-link>
+          </div>
           <div class="mega-col">
             <div class="col-header">{{ t('layout.menu.userManagement') }}</div>
-            <router-link class="menu-link menu-item-with-bg" to="/category/user">
+            <router-link v-if="hasPermission(['user'])" class="menu-link menu-item-with-bg" to="/category/user">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                 <circle cx="12" cy="7" r="4"></circle>

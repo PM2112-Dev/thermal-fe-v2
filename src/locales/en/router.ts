@@ -5,6 +5,7 @@ export default {
   dashboard: 'Home',
   live: 'Live monitoring',
   live_detail: 'Live camera',
+  stream_detail: 'Live camera',
   event: 'Measurement points',
   ai_system: 'AI alerts',
   vision_event_history_detail: 'AI alerts',
@@ -33,4 +34,8 @@ export default {
   device_sensor: 'Sensors',
   point_list: 'Monitoring points',
   formula_settings: 'PD formula settings',
+  camera_brand_list: 'Camera brands',
+  ai: 'AI',
+  ai_model_list: 'AI models',
+  ai_feature_list: 'AI features',
 }

@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import { usePermission } from '@/hooks/web/usePermission'
 import { enumLabel } from '@/utils/enumLabel'
 import { useLang } from '@/hooks/web/useI18n'
 import ListTemplate from '@/components/PageTemplate/List/ListTemplate.vue'
@@ -27,6 +28,7 @@ import useRequest from '@/hooks/web/useRequest'
 import PresetTourTab from '@/views/category/camera/components/PresetTourTab.vue'
 import CameraVisionPreset from '@/views/category/camera/components/CameraVisionPreset.vue'
 import AiSetting from '@/views/category/camera/components/AiSetting.vue'
+import AiZonePanel from '@/views/category/camera/components/AiZonePanel.vue'
 import SearchButton from '@/components/Button/SearchButton.vue'
 import DrawerForm from '@/components/Form/DrawerForm.vue'
 import {useRouter} from 'vue-router';
@@ -35,6 +37,7 @@ import CameraCard from '@/views/category/camera/components/CameraCard.vue'
 import { useAppStore } from '@/store/modules/app'
 
 const { t } = useLang()
+const { hasAction, hasAiManagement } = usePermission()
 
 const router = useRouter();
 
@@ -95,9 +98,11 @@ const columns = computed<TableColumn[]>(() => [
             <ElTooltip content={t('camera.presetSettings')}>
               <ElButton circle={true} icon={Pointer} onClick={() => showPresetSetting(scope.row)}/>
             </ElTooltip>
-            <ElTooltip content={t('camera.aiSettings')}>
-              <ElButton circle={true} icon={Notification} onClick={() => showAISetting(scope.row)}/>
-            </ElTooltip>
+            {hasAiManagement() && (
+              <ElTooltip content={t('camera.aiSettings')}>
+                <ElButton circle={true} icon={Notification} onClick={() => showAISetting(scope.row)}/>
+              </ElTooltip>
+            )}
             <EditCircleButton onClick={() => openDialogEdit(scope)}></EditCircleButton>
             <DeleteCircleButton onClick={() => openDelete(scope)}></DeleteCircleButton>
           </div>
@@ -143,7 +148,10 @@ const showVisionPresets = (item: any) => {
 
 const aiSettingDialogVisible = ref(false)
 const selectedCamera = ref()
+const aiTab = ref('features')
+const aiSettingRef = ref<InstanceType<typeof AiSetting>>()
 const showAISetting = (row: object) => {
+  aiTab.value = 'features'
   aiSettingDialogVisible.value = true
   selectedCamera.value = row
 }
@@ -208,6 +216,7 @@ const isMobile = computed(() => appStore.isMobile)
 <template>
   <div v-loading="syncPresetLoading">
     <list-template
+        :show-btn-add="hasAction('camera-list', 'create')"
         ref="elTableRef"
         key-list="camera-list"
         :columns="columns"
@@ -291,7 +300,14 @@ const isMobile = computed(() => appStore.isMobile)
       <CameraVisionPreset :visionCamera="visionCamera"/>
     </base-dialog>
     <drawer-form v-model="aiSettingDialogVisible" :destroy-on-close="true" :title="t('camera.aiSettings')" :size="isMobile ? '100%': '70%'">
-      <ai-setting :camera="selectedCamera" @saved="aiSettingDialogVisible = false"/>
+      <el-tabs v-model="aiTab" @tab-change="(n: string) => n === 'features' && aiSettingRef?.refreshZones()">
+        <el-tab-pane :label="t('ai.tabFeatures')" name="features">
+          <ai-setting ref="aiSettingRef" :camera="selectedCamera" @saved="aiSettingDialogVisible = false"/>
+        </el-tab-pane>
+        <el-tab-pane :label="t('ai.tabZones')" name="zones" lazy>
+          <ai-zone-panel :camera="selectedCamera"/>
+        </el-tab-pane>
+      </el-tabs>
     </drawer-form>
   </div>
 </template>

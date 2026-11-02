@@ -1,341 +1,120 @@
 <template>
   <div class="container main-container">
     <div class="camera-setting">
-    <data-fetcher :request-fn="() => getCameraDetailApi(cameraId)">
-      <template v-slot:default="{data}">
-        <div class="flex items-center gap-2 mb-4 ">
-          <back-button></back-button>
-          <span>{{data?.name}}</span>
+      <div class="setting-head">
+        <div class="setting-title-group">
+          <button type="button" class="setting-back" :title="t('common.back')" :aria-label="t('common.back')" @click="goBack">
+            <el-icon><ArrowLeft /></el-icon>
+          </button>
+          <div class="setting-title">
+            <div class="setting-name">{{ camera?.name }}</div>
+            <div class="setting-hint">{{ t('camera.setupSourceHint') }}</div>
+          </div>
         </div>
-      </template>
-    </data-fetcher>
-      <el-tabs v-model="activeName" type="border-card" @tabChange="tabChange">
-        <el-tab-pane :label="t('camera.tourManagement')" name="1">
-          <setting-tour></setting-tour>
+        <label class="setting-source">
+          <span>{{ t('camera.setupSource') }}</span>
+          <el-select v-model="source" class="setting-source__select">
+            <el-option :value="0" :label="t('camera.setupSourceAuto')" />
+            <el-option :value="1" :label="t('camera.setupSourceBrand')" />
+            <el-option :value="2" :label="t('camera.setupSourceOnvif')" />
+          </el-select>
+        </label>
+      </div>
+
+      <el-tabs v-model="activeName" type="border-card">
+        <!-- Chỉ render tab đang mở để không chạy 2 luồng video cùng lúc -->
+        <el-tab-pane :label="t('camera.presetTourTab')" name="1">
+          <camera-preset-tour-manager
+              v-if="camera && activeName === '1'"
+              :camera="camera"
+              :source="source"
+              @edit-zones="openZoneEditor"
+          />
         </el-tab-pane>
-        <el-tab-pane :label="t('camera.presetManagement')" name="2">
-          <setting-preset
-              @addPreset="startDraw"
-              @edit="startEditPreset"
-          ></setting-preset>
-        </el-tab-pane>
-        <el-tab-pane label="Live" name="3">
-          <stream-control
-              ref="streamRef"
-              :stream-key="cameraId"
-              :show-btn-back="false"
-              @pointedClicked="pointedClicked"
-          >
-            <template v-slot:sidebar>
-              <div class="mt-4 flex flex-col">
-                <div v-show="newDrawing" class="flex flex-col">
-                  <span class="text-sm">{{ t('camera.controlHint') }}</span>
-                  <div class="mt-2 flex flex-row">
-                    <el-button :disabled="!points.length" type="primary" @click="openDialogThermalAreas">{{ t('camera.saveZone') }}
-                    </el-button>
-                    <el-button type="danger" @click="clearPoints">{{ t('camera.clearZone') }}</el-button>
-                  </div>
-                </div>
-                <div v-show="!newDrawing" class="flex">
-                  <el-button type="danger" @click="clearPoints">{{ t('camera.redraw') }}</el-button>
-                  <el-button
-                      :disabled="!points.length"
-                      type="primary" @click="saveEditingPreset"
-                  >
-                    {{ t('camera.saveZone') }}
-                  </el-button>
-                </div>
-              </div>
-              <div v-show="formModel.thermalAreas.length" class="mt-4">
-                <div class="flex gap-2 justify-center items-center">
-                  <span class="text-sm">{{ t('camera.measuredZones') }}</span>
-                  <el-button type="primary" @click="openDialogPreset">{{ t('camera.savePreset') }}</el-button>
-                </div>
-                <div>
-                  <base-table
-                      class="mt-4"
-                      :data="formModel.thermalAreas"
-                      row-key="name"
-                      :columns="thermalAreasColumns" v-draggable="dragOptions"/>
-                </div>
-              </div>
-            </template>
-          </stream-control>
+        <el-tab-pane :label="t('camera.thermalZoneTab')" name="2">
+          <camera-thermal-area-editor
+              v-if="camera && activeName === '2'"
+              :camera="camera"
+              :preset-id="zonePresetId"
+          />
         </el-tab-pane>
       </el-tabs>
-      <base-dialog v-model="visibleDialogPreset">
-        <el-form
-            ref="presetFormRef"
-            style="max-width: 600px"
-            :model="formModel"
-            status-icon
-            :rules="formRules"
-            label-width="auto"
-            class="demo-ruleForm"
-        >
-          <el-form-item :label="t('camera.presetName')" prop="name">
-            <el-input v-model="formModel.name" autocomplete="off"/>
-          </el-form-item>
-          <div class="flex justify-center">
-            <el-form-item>
-              <el-button :loading="saveLoading" type="primary" @click="savePreset">{{ t('common.save') }}</el-button>
-            </el-form-item>
-          </div>
-        </el-form>
-      </base-dialog>
-      <base-dialog v-model="visibleThermalArea" :width="isMobile ? '100%' : '50%'">
-        <el-form
-            ref="ruleFormRef"
-            style="max-width: 600px"
-            :model="thermalAreaForm"
-            status-icon
-            :rules="formRules"
-            label-width="auto"
-            class="demo-ruleForm"
-        >
-          <el-form-item :label="t('camera.zoneName')" prop="name">
-            <el-input v-model="thermalAreaForm.name" autocomplete="off"/>
-          </el-form-item>
-          <div class="flex justify-center">
-            <el-form-item>
-              <el-button type="primary" @click="addThermalArea">{{ t('camera.addZone') }}</el-button>
-            </el-form-item>
-          </div>
-        </el-form>
-      </base-dialog>
     </div>
   </div>
 </template>
-<script setup lang="tsx">
+<script setup lang="ts">
 import { useLang } from '@/hooks/web/useI18n'
-import {computed, ref} from 'vue'
-import SettingTour from "@/views/category/camera/components/SettingTour.vue";
-import SettingPreset from "@/views/category/camera/components/SettingPreset.vue";
-import StreamControl from "@/components/Video/StreamControl.vue";
-import {useRoute} from "vue-router";
-import {ElMessage, FormInstance, FormRules} from "element-plus";
-import {rule} from "@/utils/validate";
-import {addPreset, getCameraDetailApi } from "@/api/camera";
-import {BaseTable} from "@/components/Table";
-import {vDraggable} from "@/components/Table/v-draggable";
-import EditCircleButton from "@/components/Button/EditCircleButton.vue";
-import DeleteCircleButton from "@/components/Button/DeleteCircleButton.vue";
-import { useAppStore } from '@/store/modules/app'
+import {onMounted, ref} from 'vue'
+import {useRoute, useRouter} from "vue-router";
+import { ArrowLeft } from '@element-plus/icons-vue'
+import CameraPresetTourManager from "@/views/category/camera/components/CameraPresetTourManager.vue";
+import CameraThermalAreaEditor from "@/views/category/camera/components/CameraThermalAreaEditor.vue";
+import {getCameraDetailApi} from "@/api/camera";
 
+// Quản lý góc quay, tour và vùng đo nhiệt theo cách của forest: mọi thay đổi ghi TRỰC TIẾP lên camera qua plugin
+// (API hãng hoặc ONVIF), backend đồng bộ lại từ camera rồi trả danh sách mới — camera là nguồn chuẩn, không phải DB.
 const { t } = useLang()
 
 const activeName = ref("1")
-const newDrawing = ref(true);
 const route = useRoute()
+const router = useRouter()
 const cameraId = route.params.id as string
-const streamRef = ref();
-const ruleFormRef = ref<FormInstance>()
-const presetFormRef = ref<FormInstance>()
 
-const appStore = useAppStore();
-const isMobile = computed(() => appStore.isMobile)
+// Mở thẳng bằng link (không có lịch sử) thì về danh sách camera
+const goBack = () => {
+  if (window.history.length > 1) router.back()
+  else router.push({ name: 'camera_list' })
+}
 
-const formModel = ref<any>({
-  "cameraId": cameraId,
-  "name": "",
-  "thermalAreas": []
-});
+// PtzSetupSource: 0 = Auto, 1 = API hãng, 2 = ONVIF
+const source = ref(0)
 
-const formRules = computed<FormRules>(() => {
-  const rules: FormRules = {
-    name: [rule('required', true)],
-  }
-  return rules
+const camera = ref<any>(null)
+onMounted(async () => {
+  camera.value = (await getCameraDetailApi(cameraId)).data
 })
 
-const thermalAreasColumns = computed(() => [
-  {prop: 'name', label: t('camera.zoneName')},
-  {
-    label: "",
-    slots: {
-      default: (scope) => (
-          <div>
-            <DeleteCircleButton onClick={() => deleteThermalArea(scope.$index)}/>
-            <EditCircleButton onClick={() => editThermalArea(scope.$index, scope.row)}/>
-          </div>
-      ),
-    },
-  },
-])
-const arrayMoveInPlace = (array: any[], fromIndex: number, toIndex: number) => {
-  const [movedItem] = array.splice(fromIndex, 1);
-  array.splice(toIndex, 0, movedItem);
-  return array;
-}
-
-const dragOptions = [
-  {
-    selector: "tbody", // add drag support for row
-    handle: '.el-table__row',
-    option: {
-      animation: 150,
-      onEnd: (evt: any) => {
-        arrayMoveInPlace(formModel.value.thermalAreas, evt.oldIndex, evt.newIndex)
-      },
-    },
-  },
-];
-const startDraw = () => {
-  activeName.value = '3'
-  newDrawing.value = true;
-  setTimeout(() => {
-    const ranges = formModel.value.thermalAreas.map((item) => {
-      item['strokeStyle'] = '#1F19BF'
-      item['fillStyle'] = '#1F19BF';
-      return item;
-    })
-
-    streamRef?.value?.startDrawing(ranges)
-  }, 1000);
-}
-
-
-const startEditPreset = (row: any) => {
-  row.thermalAreas = convertToRanges(row.cameraMonitorPoints)
-  formModel.value = row;
-  startDraw()
-}
-
-function convertToRanges(data: any): Range[] {
-  return data.map(item => {
-    const points = item.points
-        .match(/\(([^)]+)\)/g) // lấy từng (x,y)
-        ?.map(p => {
-          const [x, y] = p
-              .replace(/[()]/g, '')
-              .split(',')
-              .map(Number)
-
-          return {x, y}
-        }) || []
-
-    return {
-      ...item,
-      points,
-      strokeStyle: '#1f19bf', // default
-      fillStyle: '#1f19bf' // default
-    }
-  })
-}
-
-const tabChange = () => {
-  if (activeName.value == '3') {
-    startDraw()
-  }
-}
-const points = ref<any[]>([])
-const pointedClicked = (pos: any[]) => {
-  points.value = pos.map(i => ({...i}))
-}
-
-const clearPoints = () => {
-  streamRef?.value?.clearPoint()
-}
-
-const visibleThermalArea = ref(false)
-const thermalAreaForm = ref<any>({})
-const openDialogThermalAreas = () => {
-  thermalAreaForm.value = {
-    "name": "",
-    "points": points.value
-  }
-  visibleThermalArea.value = true;
-}
-
-const addThermalArea = () => {
-  if (!ruleFormRef.value) return
-  ruleFormRef?.value?.validate((valid) => {
-    if (valid) {
-
-      formModel.value.thermalAreas.push({
-        ...thermalAreaForm.value
-      })
-      visibleThermalArea.value = true;
-      clearPoints()
-      const ranges = formModel.value.thermalAreas.map((item) => {
-        item['strokeStyle'] = '#1F19BF'
-        item['fillStyle'] = '#1F19BF';
-        return item;
-      })
-      streamRef?.value?.loadRanges(ranges)
-      visibleThermalArea.value = false;
-    }
-  })
-}
-
-const visibleDialogPreset = ref(false);
-const openDialogPreset = () => {
-  visibleDialogPreset.value = true;
-}
-
-const saveLoading = ref(false)
-const savePreset = () => {
-  if (!presetFormRef.value) return
-  presetFormRef?.value?.validate((valid) => {
-    if (valid) {
-      saveLoading.value = true
-      const video = streamRef.value?.videoRef?.querySelector('video') as HTMLVideoElement
-      const rect = video.getBoundingClientRect()
-
-      const data = {...formModel.value}
-      data["videoWidth"] = Math.round(rect.width)
-      data["videoHeight"] = Math.round(rect.height)
-      addPreset(data).then(() => {
-        clearPoints()
-        visibleDialogPreset.value = false
-        ElMessage({
-          message: t('common.saveSuccess'),
-          type: 'success',
-        })
-        formModel.value = {
-          "cameraId": cameraId,
-          "name": "",
-          "thermalAreas": []
-        }
-        newDrawing.value = true;
-      }).finally(() => {
-        saveLoading.value = false
-      })
-    }
-  })
-}
-
-const drawItem = ref(null)
-const drawIndex = ref(null)
-const editThermalArea = (index, row) => {
-  clearPoints();
-  const ranges = formModel.value.thermalAreas.map((item) => {
-    item['strokeStyle'] = '#1F19BF'
-    item['fillStyle'] = '#1F19BF';
-    return item;
-  })
-  ranges[index]['strokeStyle'] = '#3FF500'
-  ranges[index]['fillStyle'] = '#3FF500'
-  streamRef?.value?.loadRanges(ranges)
-  newDrawing.value = false;
-  drawItem.value = row
-  drawIndex.value = index
-}
-
-const saveEditingPreset = () => {
-  if (drawIndex.value != null)
-  formModel.value.thermalAreas[drawIndex.value].points = points.value;
-
-  const ranges = formModel.value.thermalAreas.map((item) => {
-    item['strokeStyle'] = '#1F19BF'
-    item['fillStyle'] = '#1F19BF';
-    return item;
-  })
-  streamRef?.value?.loadRanges(ranges)
-  clearPoints();
-}
-
-const deleteThermalArea = (index) => {
-  formModel.value.thermalAreas.splice(index, 1)
+// Góc quay mở sẵn khi chuyển sang tab vùng đo từ nút "Vùng đo" của một preset
+const zonePresetId = ref<number | null>(null)
+const openZoneEditor = (preset: any) => {
+  zonePresetId.value = preset.presetId
+  activeName.value = '2'
 }
 </script>
+
+<style scoped>
+.setting-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-bottom: 14px;
+}
+.setting-title-group { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.setting-back {
+  display: grid;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-sub);
+  font-size: 16px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.setting-back:hover { border-color: var(--el-color-primary); color: var(--el-color-primary); }
+.setting-back:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.setting-title { min-width: 0; }
+.setting-name { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.setting-hint { margin-top: 2px; font-size: 12px; color: var(--text-sub); }
+.setting-source { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-sub); }
+.setting-source__select { width: 240px; }
+@media (max-width: 520px) {
+  .setting-source { width: 100%; }
+  .setting-source__select { flex: 1; width: auto; }
+}
+</style>

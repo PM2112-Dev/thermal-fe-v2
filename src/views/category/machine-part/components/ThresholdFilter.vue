@@ -46,11 +46,15 @@ const toggleAll = () => {
   <el-dropdown trigger="click">
     <!-- Button -->
     <span class="el-dropdown-link cursor-pointer">
-      <el-button size="default">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                        </svg>
-        {{ t('common.filter') }} ({{ selectedIds.length }})
+      <el-button size="small" plain class="threshold-filter-btn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+        </svg>
+        <span>{{ t('machinePart.thresholdTypeShort') }}</span>
+        <span class="threshold-filter-count">{{ selectedIds.length }}/{{ options.length }}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
       </el-button>
     </span>
 
@@ -79,3 +83,20 @@ const toggleAll = () => {
     </template>
   </el-dropdown>
 </template>
+
+<style scoped>
+.threshold-filter-btn > :deep(span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.threshold-filter-count {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+}
+</style>

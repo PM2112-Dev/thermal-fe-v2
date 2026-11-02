@@ -8,6 +8,12 @@
       v-bind="$attrs"
       header-class="!m-0"
   >
+    <template #header>
+      <DrawerTitle
+          :title="t('machine.componentSettingTitle')"
+          :crumbs="[formModel?.name, machinePart?.name]"
+      />
+    </template>
     <div class="min-h-[300px]">
       <el-tabs
           v-model="editableTabsValue"
@@ -86,6 +92,7 @@
                     :request-fn="() => getAllCamerasApi({ areaId: formModel.areaId })"
                     filterable
                     value-key="id"
+                    @selected="(cam: any) => onCameraSelected(index, cam)"
                     @change="() => changeCamera(index)"
                     clearable
                   />
@@ -105,8 +112,43 @@
                 </el-form-item>
               </el-col>
             </el-row>
+            <!-- Camera phóng điện (BatCam): không có điểm đo nhiệt, chọn ROI của camera. Cùng dữ liệu (pd_camera_rois)
+                 với tab "Cấu hình giám sát phóng điện" trong màn Camera. -->
             <el-form-item
-              v-if="item.cameraId"
+              v-if="item.cameraId && item.cameraIsPd"
+              :label="t('machine.pdRoi')"
+              label-position="top"
+              label-width="120px"
+            >
+              <el-select
+                :model-value="item.pdRois?.[0]?.cameraId === item.cameraId ? item.pdRois[0].roiIndex : null"
+                :loading="pdRoiLoading"
+                :placeholder="t('machine.selectPdRoi')"
+                :no-data-text="t('machine.pdRoiEmpty')"
+                clearable
+                class="!w-full"
+                @visible-change="(open: boolean) => open && loadPdRois(item.cameraId)"
+                @change="(val: number | null) => selectPdRoi(index, val)"
+              >
+                <el-option
+                  v-for="roi in pdRoiOptions[item.cameraId] ?? []"
+                  :key="roi.roiIndex"
+                  :value="roi.roiIndex"
+                  :label="pdRoiLabel(roi)"
+                  :disabled="isPdRoiUsed(roi, item)"
+                />
+              </el-select>
+            </el-form-item>
+            <div class="form-item-v" v-show="item.pdRois?.length">
+              <p class="font-bold">{{ t('machine.pdRoiAssigned') }}</p>
+              <div class="flex gap-2 mt-2">
+                <el-tag v-for="roi in item.pdRois ?? []" :key="`${roi.cameraId}-${roi.roiIndex}`" closable @close="() => (item.pdRois = [])">
+                  {{ roi.name || `ROI ${roi.roiIndex + 1}` }} (ROI {{ roi.roiIndex + 1 }})
+                </el-tag>
+              </div>
+            </div>
+            <el-form-item
+              v-if="item.cameraId && !item.cameraIsPd"
               :label="t('machine.cameraPoints')"
               label-position="top"
               label-width="120px"
@@ -232,6 +274,7 @@
       v-model:threshold-list="machineMonitorPoint"
       v-model:machinePartThresholdList="machinePartThresholdList"
       :component-id="modelComponents[componentIndexValue]?.id"
+      :crumbs="[formModel?.name, modelComponents[componentIndexValue]?.name]"
       @save="saveMachinePoint"
       @cancel="dialogMachinePointVisible = false"
       :append-to-body="true"
@@ -246,6 +289,8 @@ import { useLang } from '@/hooks/web/useI18n'
 import { enumLabel } from '@/utils/enumLabel'
 import VirtualizedSelectFromUrl from '@/components/Selection/VirtualizedSelectFromUrl.vue'
 import {getAllCamerasApi} from '@/api/camera'
+import {getBatcamRoisApi} from '@/api/batcam-config'
+import {CAMERA_PD_TYPE} from '@/constants'
 import { computed, nextTick, ref} from 'vue'
 import {getAllSensorsApi} from '@/api/sensor'
 import {getAllMonitorPointByCamApi, getAllMonitorPointBySensorApi} from '@/api/monitor-point'
@@ -263,6 +308,7 @@ import SelectOptions from "@/components/Selection/SelectOptions.vue";
 import ObjectSelectPoints from "@/views/category/machine/components/ObjectSelectPoints.vue";
 import InputNumber from "@/components/Input/InputNumber.vue";
 import { useAppStore } from '@/store/modules/app'
+import DrawerTitle from '@/components/Dialog/DrawerTitle.vue'
 
 const { t } = useLang()
 
@@ -350,6 +396,55 @@ const changeCamera = (index: number) => {
     monitorPointCameraRefs?.value?.[index]?.fetch()
     modelComponents.value[index].machineMonitorCameraPoints = []
   })
+}
+
+// ── Camera phóng điện (BatCam FX2): chọn ROI thay cho điểm đo nhiệt ─────────────────────────
+const pdRoiOptions = ref<Record<number, any[]>>({})
+const pdRoiLoading = ref(false)
+
+const onCameraSelected = (index: number, cam: any) => {
+  const item = modelComponents.value[index]
+  item.cameraIsPd = cam?.cameraType === CAMERA_PD_TYPE
+  if (item.cameraIsPd) loadPdRois(item.cameraId)
+}
+
+// ROI lấy từ chính thiết bị (kèm bộ phận đang gán), giống tab cấu hình giám sát phóng điện của camera.
+const loadPdRois = async (cameraId: number) => {
+  if (!cameraId) return
+  pdRoiLoading.value = true
+  try {
+    pdRoiOptions.value[cameraId] = ((await getBatcamRoisApi(cameraId)).data ?? []).filter((r: any) => r.enabled)
+  } catch {
+    pdRoiOptions.value[cameraId] = []
+  } finally {
+    pdRoiLoading.value = false
+  }
+}
+
+const pdRoiLabel = (roi: any) => {
+  const base = `ROI ${roi.roiIndex + 1}`
+  const assigned = roi.name || roi.machineComponentName
+  return assigned ? `${base} - ${assigned}` : base
+}
+
+// ROI đang gán cho bộ phận khác thì không chọn được; ROI của chính bộ phận này vẫn chọn lại được.
+const isPdRoiUsed = (roi: any, item: any) =>
+    !!roi.machineComponentId && roi.machineComponentId !== item.id
+
+const selectPdRoi = (index: number, roiIndex: number | null) => {
+  const item = modelComponents.value[index]
+  const roi = (pdRoiOptions.value[item.cameraId] ?? []).find((r: any) => r.roiIndex === roiIndex)
+  item.pdRois = roi
+      ? [{
+        cameraId: item.cameraId,
+        roiIndex: roi.roiIndex,
+        cx: roi.cx,
+        cy: roi.cy,
+        nw: roi.nw,
+        nh: roi.nh,
+        name: roi.name || item.name,
+      }]
+      : []
 }
 const changeSensor = (index: number) => {
   nextTick(() => {

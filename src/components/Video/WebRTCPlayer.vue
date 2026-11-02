@@ -117,6 +117,8 @@ const props = defineProps({
   streamKey: {type: [String, Number], required: true},
   cam: {type: [Object], required: false},
 })
+// Báo kích thước gốc của luồng để lớp vẽ (SVG) dùng đúng hệ toạ độ
+const emit = defineEmits<{ (e: 'video-size', size: { width: number; height: number }): void }>()
 
 const videoRef = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -157,6 +159,11 @@ onMounted(() => {
         video.addEventListener('pause', () => {
           isPlaying.value = false
         })
+        const reportSize = () => {
+          if (video.videoWidth && video.videoHeight) emit('video-size', {width: video.videoWidth, height: video.videoHeight})
+        }
+        video.addEventListener('loadedmetadata', reportSize)
+        video.addEventListener('resize', reportSize)
 
         document.addEventListener('fullscreenchange', () => {
           isFullscreen.value = !!document.fullscreenElement

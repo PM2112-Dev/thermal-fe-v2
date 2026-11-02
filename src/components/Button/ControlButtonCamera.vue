@@ -12,10 +12,10 @@
             <el-form-item :label="t('video.rotationSpeed')" prop="speed" :error="formErrors.speed">
               <el-slider
                   :min="0"
-                  :step="3"
-                  :max="5"
-                  :show-stops="true"
-                  v-model="speed"
+                  :max="100"
+                  :step="PTZ_SPEED_STEP_PERCENT"
+                  :format-tooltip="(v: number) => `${v}%`"
+                  v-model="speedPercent"
                   style="width: 160px"
               />
             </el-form-item>
@@ -75,7 +75,7 @@ import GameControllerPad from '@/components/Button/GameControllerPad.vue'
 import {SwitchButton, ZoomIn, ZoomOut, Setting} from '@element-plus/icons-vue'
 import useRequest from "@/hooks/web/useRequest";
 import {ref} from "vue";
-import {CAMERA_COMMANDS} from "@/constants/camera";
+import {CAMERA_COMMANDS, PTZ_SPEED_DEFAULT_PERCENT, PTZ_SPEED_STEP_PERCENT, toPtzSpeed} from "@/constants/camera";
 
 const { t } = useLang()
 
@@ -90,14 +90,14 @@ const props = defineProps({
   }
 })
 
-const speed = ref(3);
+const speedPercent = ref(PTZ_SPEED_DEFAULT_PERCENT);
 const preCommand = ref();
 
 const {onRequest} = useRequest();
 const requestCommand = (command: number) => {
   onRequest(sendCommandCameraApi, {
     cameraId: props.formModel.id,
-    speed: speed.value,
+    speed: toPtzSpeed(speedPercent.value),
     command: command,
     preCommand: preCommand.value
   })

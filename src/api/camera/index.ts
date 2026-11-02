@@ -51,6 +51,23 @@ export const listPresetsApi = (id: any): Promise<IResponse> => {
   return request.get({url: `api/Cameras/presets/${id}`})
 }
 
+// Nguồn thiết lập PTZ: 0 = Auto (API hãng → ONVIF), 1 = chỉ API hãng, 2 = chỉ ONVIF
+export type PtzSetupSource = 0 | 1 | 2
+
+/** Vùng đo nhiệt trên camera, toạ độ chuẩn hoá 0..1. shape: 1 đường, 3 chữ nhật, 4 đa giác, 5 điểm. */
+export interface ThermalAreaDto {
+  areaId: number | null
+  name: string
+  shape: number
+  points: { x: number; y: number }[]
+}
+
+export interface ThermalAreaListDto {
+  areas: ThermalAreaDto[]
+  maxAreas: number | null
+  shapes: number[]
+}
+
 export const sendCommandCameraApi = (params: object): Promise<IResponse> => {
   return request.post({url: 'api/Cameras/control', data: params})
 }
@@ -102,6 +119,41 @@ export const addPreset = (data: any): Promise<IResponse> => {
   return request.post({url: 'api/Cameras/addPreset', data: data})
 }
 
+// ---- Quản lý góc quay / tour / vùng đo nhiệt kiểu forest: thao tác TRỰC TIẾP trên camera qua plugin, ----
+// ---- sau mỗi lần lưu backend đồng bộ lại từ camera và trả CameraTourPresetInfo (presets + cameraTours). ----
+// source: 0 = Auto (API hãng nếu có, không thì ONVIF), 1 = chỉ API hãng, 2 = chỉ ONVIF.
+export const savePresetApi = (cameraId: string | number, data: object): Promise<IResponse> => {
+  return request.post({url: `/api/Cameras/${cameraId}/presets`, data})
+}
+
+export const removePresetApi = (cameraId: string | number, presetId: number, source = 0): Promise<IResponse> => {
+  return request.delete({url: `/api/Cameras/${cameraId}/presets/${presetId}`, params: {source}})
+}
+
+export const getTourSpeedApi = (cameraId: string | number, source = 0): Promise<IResponse> => {
+  return request.get({url: `/api/Cameras/${cameraId}/tour-speed`, params: {source}})
+}
+
+export const saveTourApi = (cameraId: string | number, data: object): Promise<IResponse> => {
+  return request.post({url: `/api/Cameras/${cameraId}/tours`, data})
+}
+
+export const removeTourApi = (cameraId: string | number, tourId: number, source = 0): Promise<IResponse> => {
+  return request.delete({url: `/api/Cameras/${cameraId}/tours/${tourId}`, params: {source}})
+}
+
+export const getThermalAreasApi = (cameraId: string | number, presetId: number): Promise<IResponse> => {
+  return request.get({url: `/api/Cameras/${cameraId}/presets/${presetId}/thermal-areas`})
+}
+
+export const saveThermalAreaApi = (cameraId: string | number, presetId: number, data: object): Promise<IResponse> => {
+  return request.post({url: `/api/Cameras/${cameraId}/presets/${presetId}/thermal-areas`, data})
+}
+
+export const removeThermalAreaApi = (cameraId: string | number, presetId: number, areaId: number): Promise<IResponse> => {
+  return request.delete({url: `/api/Cameras/${cameraId}/presets/${presetId}/thermal-areas/${areaId}`})
+}
+
 export const exportCameraIECApi = (searchParams: object): Promise<IResponse<[]>> => {
   return request.get({
     url: '/api/Cameras/exportCameras',
@@ -114,4 +166,22 @@ export const importCameraIECApi = (data: any): Promise<IResponse> => {
   return request.post({
     url: '/api/Cameras/importIEC', data, headers: {'Content-Type': 'multipart/form-data'}
   })
+}
+
+// ---- Hướng camera (la bàn) ----
+export const getCameraDirectionApi = (id: number): Promise<IResponse<any>> => {
+  return request.get({url: `api/Cameras/${id}/direction`})
+}
+
+export const saveCameraDirectionApi = (id: number, data: { heading: number; panInverted: boolean }): Promise<IResponse<any>> => {
+  return request.put({url: `api/Cameras/${id}/direction`, data})
+}
+
+// ---- Cảnh báo cháy/khói bật trên camera qua API hãng ----
+export const getCameraFireAlarmApi = (id: number): Promise<IResponse<any>> => {
+  return request.get({url: `api/Cameras/${id}/fire-alarm`})
+}
+
+export const saveCameraFireAlarmApi = (id: number, data: object): Promise<IResponse<any>> => {
+  return request.put({url: `api/Cameras/${id}/fire-alarm`, data})
 }

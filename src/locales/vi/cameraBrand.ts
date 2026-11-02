@@ -1,0 +1,21 @@
+// Hãng camera và plugin kết nối
+export default {
+  listTitle: 'Hãng camera',
+  code: 'Mã hãng',
+  name: 'Tên hãng',
+  description: 'Mô tả',
+  searchPlaceholder: 'Nhập mã hoặc tên hãng...',
+  plugin: 'Plugin kết nối',
+  pluginVersion: 'Phiên bản',
+  pluginActive: 'Đang hoạt động',
+  pluginDisabled: 'Đã nạp, đang tắt',
+  pluginNone: 'Chưa có plugin',
+  capabilities: 'Khả năng',
+  cameraCount: 'Số camera',
+  builtIn: 'Tích hợp sẵn',
+  builtInHint: 'Hãng tích hợp sẵn trong hệ thống: không xoá được, không đổi được mã.',
+  codeHint: 'Trùng BrandCode của plugin (không phân biệt hoa thường).',
+  hostContract: 'Contract của hệ thống',
+  loadErrors: 'Plugin nạp lỗi',
+  loadedPlugins: 'Plugin đã nạp',
+}

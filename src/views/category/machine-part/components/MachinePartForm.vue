@@ -60,6 +60,7 @@
         v-model="dialogMachinePointVisible"
         v-model:thresholdList="machinePartThresholdList"
         :part-id="formModel.id"
+        :crumbs="[formModel.name]"
         @cancel="dialogMachinePointVisible = false"
         @save="saveMachinePoint"
         align-center

@@ -4,47 +4,59 @@
       :destroy-on-close="true"
       :append-to-body="true"
       @open="dialogOpen"
+      header-class="!mb-2"
       :show-close="false"
       v-bind="$attrs">
     <template #header>
-      <div class="drawer-header">
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5">
+      <DrawerTitle
+          :title="t('machinePart.setupThreshold')"
+          :crumbs="crumbs"
+      >
+        <template #icon>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
           </svg>
-          <h3 class="text-[14px] md:text-[18px] text-[#3b82f6] uppercase">{{ t('machinePart.setupThreshold') }}</h3>
-        </div>
-      </div>
+        </template>
+      </DrawerTitle>
     </template>
     <!-- Tách 2 tab domain Nhiệt độ / Phóng điện (PD) - đây là nơi cấu hình "Khai báo chung từ loại thiết
          bị" hiện ra ở MachinePointDialog.vue (Khai báo riêng theo bộ phận). -->
-    <el-tabs v-model="domainTab" type="card">
+    <el-tabs v-model="domainTab" class="threshold-domain-tabs">
       <el-tab-pane name="thermal" :label="t('machinePart.thermalThreshold')">
-        <div class="p-4 ml-2 min-h-[400px]">
-          <el-form-item :label="t('machinePart.thresholdType')" label-position="top">
-            <ThresholdFilter
-                v-model="thermalSelectedTypes"
-                :options="thermalThresholdTypeOptions"
-                @change="changeThresholdTypeList"
-            />
-          </el-form-item>
-          <threshold-tab :threshold-list="thermalThresholdList"/>
+        <div class="threshold-pane">
+          <threshold-tab :threshold-list="thermalThresholdList" :context="[t('machinePart.thermalThreshold')]">
+            <template #toolbar>
+              <ThresholdFilter
+                  v-model="thermalSelectedTypes"
+                  :options="thermalThresholdTypeOptions"
+                  @change="changeThresholdTypeList"
+              />
+            </template>
+          </threshold-tab>
         </div>
       </el-tab-pane>
       <el-tab-pane name="pd" :label="t('machinePart.pdThreshold')">
-        <div class="p-4 ml-2 min-h-[400px]">
-          <!-- Single-select - PD chỉ chọn 1 trong 2 kiểu (ΔPD%/tháng HOẶC ngưỡng dB tuyệt đối). -->
-          <el-form-item :label="t('machinePart.pdThresholdType')" label-position="top">
-            <el-select v-model="pdSelectedType" value-key="id" clearable class="!w-full">
-              <el-option v-for="item in pdThresholdTypeOptions" :key="item.id" :label="item.name" :value="item"/>
-            </el-select>
-          </el-form-item>
-
-          <!-- Công thức ΔPD%/tháng MẶC ĐỊNH cho mọi bộ phận thuộc loại này (bộ phận nào có công thức riêng
-               thì công thức riêng ưu tiên hơn - xem MachinePointDialog.vue). -->
-          <PdFormulaAssignmentPicker v-if="pdSelectedType?.id === PD_GROWTH_RATE_ID" :target-type="2" :target-id="props.partId"/>
-
-          <threshold-tab :threshold-list="pdThresholdList"/>
+        <div class="threshold-pane">
+          <threshold-tab :threshold-list="pdThresholdList" :context="[t('machinePart.pdThreshold')]">
+            <!-- Single-select - PD chỉ chọn 1 trong 2 kiểu (ΔPD%/tháng HOẶC ngưỡng dB tuyệt đối). -->
+            <template #toolbar>
+              <el-select
+                  v-model="pdSelectedType"
+                  value-key="id"
+                  clearable
+                  size="small"
+                  style="width: 270px"
+                  :placeholder="t('machinePart.pdThresholdType')"
+              >
+                <el-option v-for="item in pdThresholdTypeOptions" :key="item.id" :label="item.name" :value="item"/>
+              </el-select>
+            </template>
+            <!-- Công thức ΔPD%/tháng MẶC ĐỊNH cho mọi bộ phận thuộc loại này (bộ phận nào có công thức riêng
+                 thì công thức riêng ưu tiên hơn - xem MachinePointDialog.vue). -->
+            <template #extra="{ mode }">
+              <PdFormulaSection v-if="mode.id === PD_GROWTH_RATE_ID" :target-type="2" :target-id="props.partId"/>
+            </template>
+          </threshold-tab>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -66,11 +78,12 @@ import { useLang } from '@/hooks/web/useI18n'
 import {computed, ref} from 'vue'
 import CancelButton from '@/components/Button/CancelButton.vue'
 import {cloneObject} from "@/utils/objectUtils";
-import {defaultLevels} from "@/views/category/machine/components/levels";
+import {buildDefaultThresholds} from "@/views/category/machine/components/levels";
 import ThresholdTab from "@/views/category/machine/components/ThresholdTab.vue";
 import {useConfigStore} from "@/store/modules/configStore";
 import ThresholdFilter from "@/views/category/machine-part/components/ThresholdFilter.vue";
-import PdFormulaAssignmentPicker from '@/views/category/machine/components/PdFormulaAssignmentPicker.vue'
+import PdFormulaSection from '@/views/category/machine/components/PdFormulaSection.vue'
+import DrawerTitle from '@/components/Dialog/DrawerTitle.vue'
 
 const { t } = useLang()
 
@@ -110,6 +123,11 @@ const props = defineProps({
     type: Number,
     required: false,
   },
+  // Ngữ cảnh hiển thị trên tiêu đề, vd. [tên loại thiết bị, tên bộ phận]
+  crumbs: {
+    type: Array<string | undefined | null>,
+    default: () => [],
+  },
 })
 
 // Emits
@@ -129,11 +147,7 @@ const changeThresholdTypeList = () => {
         props.thresholdList.find(item => item.id === modeTmp.id) :
         false;
     if (!oldMode) {
-      modeTmp.temperatureThresholds = defaultLevels.map((levelItem) => ({
-        maxTemperature: 0,
-        thresholdType: mode.id,
-        level: levelItem.level
-      }))
+      modeTmp.temperatureThresholds = buildDefaultThresholds(mode.id)
       listModeTmp.push(modeTmp)
     } else {
       listModeTmp.push(oldMode)
@@ -160,10 +174,21 @@ const pdSelectedType = computed<any | null>({
 const thermalThresholdList = computed(() => (props.thresholdList ?? []).filter((t: any) => !PD_THRESHOLD_TYPE_IDS.includes(t.id)))
 const pdThresholdList = computed(() => (props.thresholdList ?? []).filter((t: any) => PD_THRESHOLD_TYPE_IDS.includes(t.id)))
 </script>
+
 <style scoped>
-.drawer-header {
+.threshold-pane {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12px;
+  padding-top: 4px;
+}
+
+.threshold-domain-tabs :deep(.el-tabs__header) {
+  margin-bottom: 12px;
+}
+
+.threshold-domain-tabs :deep(.el-tabs__item) {
+  font-size: 14px;
+  font-weight: 600;
 }
 </style>

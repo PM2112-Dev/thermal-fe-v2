@@ -234,6 +234,17 @@ const renderCameraPointTags = (cameraPoints: any) => {
   );
 };
 
+// ROI camera phóng điện (BatCam) gán cho bộ phận — hiển thị cùng các điểm đo nhiệt.
+const renderPdRoiTags = (pdRois: any[]) => (
+    <>
+      {pdRois.map((roi) => (
+          <ElTag key={`pd-${roi.cameraId}-${roi.roiIndex}`} effect="plain" type="warning">
+            {roi.name || `ROI ${roi.roiIndex + 1}`} (PD · ROI {roi.roiIndex + 1})
+          </ElTag>
+      ))}
+    </>
+)
+
 const machinePartCols = computed(() => [
   {prop: 'name', label: t('machine.partName')},
   {
@@ -257,6 +268,7 @@ const machinePartCols = computed(() => [
                           <div class="flex flex-wrap gap-2">
                             {renderCameraPointTags(machineComponent?.machineMonitorCameraPoints ?? [])}
                             {renderCameraPointTags(machineComponent?.machineMonitorSensorPoints ?? [])}
+                            {renderPdRoiTags(machineComponent?.pdRois ?? [])}
                           </div>
                       )
                     }}

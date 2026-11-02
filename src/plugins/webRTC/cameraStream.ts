@@ -1,6 +1,7 @@
 import { getStreamApi, getStreamTicketApi } from '@/api/camera'
 
-export const prepareCameraStream = async (player: any, cameraId: string | number) => {
+/** Trả về tên luồng go2rtc BE cấp (chế độ ticket không biết tên luồng nên trả undefined). */
+export const prepareCameraStream = async (player: any, cameraId: string | number): Promise<string | undefined> => {
   const url = new URL(import.meta.env.VITE_LIVE_PATH, window.location.href)
   if (url.protocol === 'https:') url.protocol = 'wss:'
   if (url.protocol === 'http:') url.protocol = 'ws:'
@@ -22,7 +23,10 @@ export const prepareCameraStream = async (player: any, cameraId: string | number
     const res = await getStreamApi(cameraId)
     url.searchParams.set('src', res.data)
     player.getWebSocketUrl = null
+    player.src = url
+    return typeof res.data === 'string' ? res.data : undefined
   }
 
   player.src = url
+  return undefined
 }

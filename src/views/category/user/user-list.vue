@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import { usePermission } from '@/hooks/web/usePermission'
 import { enumLabel } from '@/utils/enumLabel'
 import ListTemplate from '@/components/PageTemplate/List/ListTemplate.vue'
 import {TableColumn} from '@/components/Table'
@@ -18,6 +19,7 @@ import UserCard from "@/views/category/user/components/UserCard.vue";
 import { useAppStore } from '@/store/modules/app'
 
 const {t} = useLang()
+const { hasAction } = usePermission()
 const renderActionColumn = (scope: any) => {
   return (
       <div>
@@ -103,6 +105,7 @@ const isMobile = computed(() => appStore.isMobile)
 
 <template>
   <list-template
+      :show-btn-add="hasAction('user', 'create')"
       :title="t('user.title')"
       ref="elTableRef"
       key-list="user-list"

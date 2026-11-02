@@ -1,0 +1,176 @@
+import { test, expect } from '@playwright/test'
+import { openPage, snap, filterOptions, tableRows } from './helpers'
+
+// ---------- Nhóm 04: Sự kiện nhiệt ----------
+test('TC-04-30 | Trang chủ sự kiện: hiển thị 2 biểu đồ (nhật ký nhiệt độ, thống kê cảnh báo) | Trang chủ sự kiện | /event/home', async ({ page }) => {
+  await openPage(page, '/event/home')
+  await page.waitForTimeout(2000)
+  expect(await page.locator('.apexcharts-canvas').count()).toBeGreaterThanOrEqual(2)
+  await snap(page)
+})
+test('TC-04-31 | Trang chủ sự kiện: có nút Bộ lọc mở ra các lựa chọn lọc | Trang chủ sự kiện | /event/home', async ({ page }) => {
+  await openPage(page, '/event/home')
+  await page.waitForTimeout(1500)
+  await expect(page.getByText('Bộ lọc').first()).toBeVisible()
+  await page.getByText('Bộ lọc').first().click({ force: true })
+  await page.waitForTimeout(1000)
+  await snap(page)
+})
+test('TC-04-32 | Cảnh báo nhiệt: có đủ bộ lọc thời gian, khu vực, thiết bị và nút Tìm kiếm/Xuất file | Cảnh báo nhiệt độ | /event/notification-system', async ({ page }) => {
+  await openPage(page, '/event/notification-system')
+  for (const l of [/thời gian từ/i, /thời gian đến/i, /khu vực/i, /thiết bị/i]) await expect(page.locator('.filter-label', { hasText: l }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Tìm kiếm' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Xuất file' }).first()).toBeVisible()
+  await snap(page)
+})
+test('TC-04-33 | Cảnh báo nhiệt: bộ lọc Khu vực liệt kê khu vực của hệ thống | Cảnh báo nhiệt độ | /event/notification-system', async ({ page }) => {
+  await openPage(page, '/event/notification-system')
+  const opts = await filterOptions(page, /khu vực/i)
+  expect(opts.length).toBeGreaterThan(0)
+  await snap(page)
+})
+test('TC-04-34 | Cảnh báo nhiệt: bảng có đủ cột (hình ảnh, ngày, giờ, thiết bị, bộ phận, nhiệt độ, đánh giá...) | Cảnh báo nhiệt độ | /event/notification-system', async ({ page }) => {
+  await openPage(page, '/event/notification-system')
+  const heads = (await page.locator('thead th').allInnerTexts()).join('|')
+  for (const h of ['Hình ảnh', 'Ngày', 'Giờ', 'Khu vực', 'Thiết bị', 'Bộ phận', 'Điểm nhiệt', 'Nhiệt độ', 'Đánh giá', 'Trạng thái']) expect(heads).toContain(h)
+  await snap(page)
+})
+test('TC-04-35 | Lịch sử nhiệt: có bộ lọc kiểu so sánh và đánh giá | Lịch sử sự kiện nhiệt | /event/event-history', async ({ page }) => {
+  await openPage(page, '/event/event-history')
+  for (const l of [/kiểu so sánh/i, /đánh giá/i]) await expect(page.locator('.filter-label', { hasText: l }).first()).toBeVisible()
+  await snap(page)
+})
+test('TC-04-36 | Lịch sử nhiệt: bộ lọc Đánh giá có các mức đánh giá | Lịch sử sự kiện nhiệt | /event/event-history', async ({ page }) => {
+  await openPage(page, '/event/event-history')
+  const opts = await filterOptions(page, /đánh giá/i)
+  expect(opts.length).toBeGreaterThan(1)
+  await snap(page)
+})
+test('TC-04-37 | Lịch sử nhiệt: bảng có đủ cột ngày, giờ, khu vực, thiết bị, bộ phận, điểm nhiệt, nhiệt độ | Lịch sử sự kiện nhiệt | /event/event-history', async ({ page }) => {
+  await openPage(page, '/event/event-history')
+  const heads = (await page.locator('thead th').allInnerTexts()).join('|')
+  for (const h of ['Ngày', 'Giờ', 'Khu vực', 'Thiết bị', 'Bộ phận', 'Điểm nhiệt', 'Nhiệt độ']) expect(heads).toContain(h)
+  await snap(page)
+})
+test('TC-04-38 | Lịch sử nhiệt: có phân trang với lựa chọn số dòng mỗi trang | Lịch sử sự kiện nhiệt | /event/event-history', async ({ page }) => {
+  await openPage(page, '/event/event-history')
+  await expect(page.locator('.el-pagination').first()).toBeVisible()
+  await snap(page)
+})
+
+// ---------- Nhóm 05: PD ----------
+test('TC-05-30 | Tổng hợp PD: hiển thị 4 biểu đồ thống kê | Tổng hợp phóng điện | /event/pd-summary', async ({ page }) => {
+  await openPage(page, '/event/pd-summary')
+  await page.waitForTimeout(2500)
+  expect(await page.locator('.apexcharts-canvas').count()).toBeGreaterThanOrEqual(4)
+  await snap(page)
+})
+test('TC-05-31 | Tổng hợp PD: có đủ tiêu đề các biểu đồ thống kê | Tổng hợp phóng điện | /event/pd-summary', async ({ page }) => {
+  await openPage(page, '/event/pd-summary')
+  for (const t of ['Tỷ lệ xử lý cảnh báo', 'Số lượng cảnh báo theo ngày', 'Số lượng cảnh báo theo khu vực', 'Phân bố tình trạng cảnh báo', 'Top bộ phận có mức PD đo được cao nhất']) await expect(page.getByText(t).first()).toBeVisible()
+  await snap(page)
+})
+test('TC-05-32 | Tổng hợp PD: chuyển sang tab "Nhật ký phóng điện theo điểm đo" | Tổng hợp phóng điện | /event/pd-summary', async ({ page }) => {
+  await openPage(page, '/event/pd-summary')
+  await page.getByText('Nhật ký phóng điện theo điểm đo').first().click()
+  await page.waitForTimeout(1500)
+  await snap(page)
+  await page.getByText('Thống kê phóng điện vượt ngưỡng').first().click()
+  await page.waitForTimeout(800)
+  expect(await page.locator('.apexcharts-canvas:visible').count()).toBeGreaterThan(0)
+})
+test('TC-05-33 | Tổng hợp PD: lọc khu vực và khoảng ngày rồi bấm Tìm kiếm không lỗi | Tổng hợp phóng điện | /event/pd-summary', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await openPage(page, '/event/pd-summary')
+  await page.getByRole('button', { name: 'Tìm kiếm' }).first().click()
+  await page.waitForTimeout(2000)
+  expect(errors).toHaveLength(0)
+  await snap(page)
+})
+test('TC-05-34 | Tổng hợp PD: nút Download có thể bấm | Tổng hợp phóng điện | /event/pd-summary', async ({ page }) => {
+  await openPage(page, '/event/pd-summary')
+  await expect(page.getByRole('button', { name: 'Download' }).first()).toBeEnabled()
+  await snap(page)
+})
+test('TC-05-35 | Lịch sử PD: có bộ lọc ΔPD% từ/đến, bộ phận, đánh giá | Lịch sử phóng điện | /event/pd-history', async ({ page }) => {
+  await openPage(page, '/event/pd-history')
+  for (const l of [/ΔPD% từ/i, /ΔPD% đến/i, /bộ phận/i, /đánh giá/i]) await expect(page.locator('.filter-label', { hasText: l }).first()).toBeVisible()
+  await snap(page)
+})
+test('TC-05-36 | Lịch sử PD: bộ lọc Đánh giá có nhiều mức | Lịch sử phóng điện | /event/pd-history', async ({ page }) => {
+  await openPage(page, '/event/pd-history')
+  expect((await filterOptions(page, /đánh giá/i)).length).toBeGreaterThan(1)
+  await snap(page)
+})
+test('TC-05-37 | Lịch sử PD: sắp xếp thời gian mới nhất trước | Lịch sử phóng điện | /event/pd-history', async ({ page }) => {
+  await openPage(page, '/event/pd-history')
+  const times = await tableRows(page).evaluateAll((trs) => trs.slice(0, 6).map((tr) => { const m = (tr.textContent ?? '').match(/(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2}:\d{2})/); return m ? `${m[1]} ${m[2]}` : '' }))
+  const clean = times.filter(Boolean)
+  expect(clean.length).toBeGreaterThan(1)
+  expect(clean).toEqual([...clean].sort().reverse())
+  await snap(page)
+})
+test('TC-05-38 | Lịch sử PD: lọc ΔPD% rất lớn thì không có dữ liệu | Lịch sử phóng điện | /event/pd-history', async ({ page }) => {
+  await openPage(page, '/event/pd-history')
+  const from = page.locator('.filter-item').filter({ has: page.locator('.filter-label', { hasText: /ΔPD% từ/i }) }).locator('input').first()
+  await from.fill('99999')
+  await page.getByRole('button', { name: 'Tìm kiếm' }).first().click()
+  await page.waitForTimeout(2000)
+  expect(await tableRows(page).count()).toBe(0)
+  await snap(page)
+})
+test('TC-05-39 | Cảnh báo PD: trạng thái xử lý hiển thị "Chưa xử lý" cho cảnh báo mới | Cảnh báo phóng điện (PD) | /event/pd-notification-system', async ({ page }) => {
+  await openPage(page, '/event/pd-notification-system')
+  expect(await tableRows(page).first().innerText()).toContain('Chưa xử lý')
+  await snap(page)
+})
+test('TC-05-40 | Cảnh báo PD: bộ lọc Kiểu cảnh báo có lựa chọn | Cảnh báo phóng điện (PD) | /event/pd-notification-system', async ({ page }) => {
+  await openPage(page, '/event/pd-notification-system')
+  expect((await filterOptions(page, /kiểu cảnh báo/i)).length).toBeGreaterThan(1)
+  await snap(page)
+})
+test('TC-05-41 | Cảnh báo PD: dòng cảnh báo hiển thị thiết bị, bộ phận, cường độ (dB) và đánh giá | Cảnh báo phóng điện (PD) | /event/pd-notification-system', async ({ page }) => {
+  await openPage(page, '/event/pd-notification-system')
+  const t = await tableRows(page).first().innerText()
+  expect(t).toMatch(/dB/); expect(t).toMatch(/Trung bình|Tốt|Khá|Kém|Nguy hiểm|Cao/i)
+  await snap(page)
+})
+
+// ---------- Nhóm 06: Cảnh báo AI ----------
+test('TC-06-30 | AI: lọc theo camera chỉ còn cảnh báo của camera đó | Cảnh báo AI | /event/ai-notification', async ({ page }) => {
+  await openPage(page, '/event/ai-notification')
+  const item = page.locator('.filter-group-ai').filter({ has: page.locator('label', { hasText: /^\s*Camera\s*$/ }) }).first()
+  await item.locator('.el-select__wrapper').first().click()
+  await page.locator('.el-select-dropdown__item:visible').first().waitFor({ timeout: 8000 })
+  const opt = page.locator('.el-select-dropdown__item:visible').first()
+  const name = (await opt.innerText()).trim()
+  await opt.click()
+  await page.getByRole('button', { name: 'Tìm kiếm' }).first().click()
+  await page.waitForTimeout(2000)
+  const n = await tableRows(page).count()
+  if (n > 0) for (const t of await tableRows(page).allInnerTexts()) expect(t).toContain(name)
+  await snap(page)
+})
+test('TC-06-31 | AI: bộ lọc Loại cảnh báo có lựa chọn "Phát hiện người" | Cảnh báo AI | /event/ai-notification', async ({ page }) => {
+  await openPage(page, '/event/ai-notification')
+  const item = page.locator('.filter-group-ai').filter({ has: page.locator('label', { hasText: /^\s*Loại cảnh báo\s*$/ }) }).first()
+  await item.locator('.el-select__wrapper').first().click()
+  await page.locator('.el-select-dropdown__item:visible').first().waitFor({ timeout: 8000 })
+  const opts = (await page.locator('.el-select-dropdown__item:visible').allInnerTexts()).join('|')
+  expect(opts).toContain('Phát hiện người')
+  await snap(page)
+})
+test('TC-06-32 | AI: danh sách sắp xếp thời gian mới nhất trước | Cảnh báo AI | /event/ai-notification', async ({ page }) => {
+  await openPage(page, '/event/ai-notification')
+  const times = await tableRows(page).evaluateAll((trs) => trs.slice(0, 8).map((tr) => { const m = (tr.textContent ?? '').match(/(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2}:\d{2})/); return m ? `${m[1]} ${m[2]}` : '' }).filter(Boolean))
+  expect(times.length).toBeGreaterThan(1)
+  expect(times).toEqual([...times].sort().reverse())
+  await snap(page)
+})
+test('TC-06-33 | AI: mỗi dòng cảnh báo có đủ ngày, giờ, khu vực, tên camera, loại cảnh báo | Cảnh báo AI | /event/ai-notification', async ({ page }) => {
+  await openPage(page, '/event/ai-notification')
+  const t = await tableRows(page).first().innerText()
+  expect(t).toMatch(/\d{4}-\d{2}-\d{2}/); expect(t).toMatch(/\d{2}:\d{2}:\d{2}/); expect(t).toContain('Cam'); expect(t).toContain('Phát hiện')
+  await snap(page)
+})

@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import { usePermission } from '@/hooks/web/usePermission'
 import { enumLabel } from '@/utils/enumLabel'
 import ListTemplate from '@/components/PageTemplate/List/ListTemplate.vue'
 import { TableColumn } from '@/components/Table'
@@ -16,6 +17,7 @@ import AreaCard from '@/views/category/area/components/AreaCard.vue'
 import { useAppStore } from '@/store/modules/app'
 
 const { t } = useLang()
+const { hasAction } = usePermission()
 const renderActionColumn = (scope: any) => {
   return (
     <div>
@@ -79,6 +81,7 @@ const isMobile = computed(() => appStore.isMobile)
 
 <template>
   <list-template
+      :show-btn-add="hasAction('area', 'create')"
       ref="elTableRef"
       :title="t('area.listTitle')"
       key-list="area-list"

@@ -4,62 +4,93 @@
       :destroy-on-close="true"
       :append-to-body="true"
       @open="dialogOpen"
+      header-class="!mb-2"
       :center="true"
       align-center
       :show-close="false"
       v-bind="$attrs">
+    <template #header>
+      <DrawerTitle
+          :title="t('machine.setupThreshold')"
+          :crumbs="crumbs"
+      >
+        <template #icon>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
+          </svg>
+        </template>
+      </DrawerTitle>
+    </template>
     <!-- Tách 2 tab domain Nhiệt độ / Phóng điện (PD) - 2 nghiệp vụ khác hẳn nhau (đơn vị, cách so sánh,
          công thức riêng cho PD), gộp chung 1 danh sách trước đây dễ chọn nhầm. -->
-    <el-tabs v-model="domainTab" type="card">
+    <el-tabs v-model="domainTab" class="threshold-domain-tabs">
       <el-tab-pane name="thermal" :label="t('machine.thermalThreshold')">
-        <el-tabs v-model="thermalTabModel" type="card">
-          <el-tab-pane
-              v-if="props.machinePartThresholdList"
-              name="gen"
-              :label="t('machine.inheritFromType')"
+        <div class="threshold-pane">
+          <!-- Chung (kế thừa từ loại thiết bị, chỉ xem) / Riêng (của bộ phận này) -->
+          <div v-if="hasInherited" class="scope-switch">
+            <el-segmented v-model="thermalTabModel" :options="scopeOptions"/>
+          </div>
+          <threshold-tab
+              v-if="hasInherited && thermalTabModel === 'gen'"
+              key="thermal-gen"
+              :threshold-list="thermalMachinePartThresholdList"
+              :context="[t('machine.thermalThreshold'), t('machine.inheritFromType')]"
+              readonly
+          />
+          <threshold-tab
+              v-else
+              key="thermal-main"
+              :threshold-list="thermalThresholdList"
+              :context="[t('machine.thermalThreshold'), t('machine.customThreshold')]"
           >
-            <threshold-tab :threshold-list="thermalMachinePartThresholdList"/>
-          </el-tab-pane>
-          <el-tab-pane name="main" :label="t('machine.customThreshold')">
-            <div class="p-4 ml-2 min-h-[400px]">
-              <el-form-item :label="t('machine.thresholdType')" label-position="top">
-                <ThresholdFilter
-                    v-model="thermalSelectedTypes"
-                    :options="thermalThresholdTypeOptions"
-                    @change="changeThresholdTypeList"
-                />
-              </el-form-item>
-              <threshold-tab :threshold-list="thermalThresholdList"/>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
+            <template #toolbar>
+              <ThresholdFilter
+                  v-model="thermalSelectedTypes"
+                  :options="thermalThresholdTypeOptions"
+                  @change="changeThresholdTypeList"
+              />
+            </template>
+          </threshold-tab>
+        </div>
       </el-tab-pane>
       <el-tab-pane name="pd" :label="t('machine.pdThreshold')">
-        <el-tabs v-model="pdTabModel" type="card">
-          <el-tab-pane
-              v-if="props.machinePartThresholdList"
-              name="gen"
-              :label="t('machine.inheritFromType')"
+        <div class="threshold-pane">
+          <div v-if="hasInherited" class="scope-switch">
+            <el-segmented v-model="pdTabModel" :options="scopeOptions"/>
+          </div>
+          <threshold-tab
+              v-if="hasInherited && pdTabModel === 'gen'"
+              key="pd-gen"
+              :threshold-list="pdMachinePartThresholdList"
+              :context="[t('machine.pdThreshold'), t('machine.inheritFromType')]"
+              readonly
+          />
+          <threshold-tab
+              v-else
+              key="pd-main"
+              :threshold-list="pdThresholdList"
+              :context="[t('machine.pdThreshold'), t('machine.customThreshold')]"
           >
-            <threshold-tab :threshold-list="pdMachinePartThresholdList"/>
-          </el-tab-pane>
-          <el-tab-pane name="main" :label="t('machine.customThreshold')">
-            <div class="p-4 ml-2 min-h-[400px]">
-              <!-- Single-select - PD chỉ chọn 1 trong 2 kiểu (ΔPD%/tháng HOẶC ngưỡng dB tuyệt đối). -->
-              <el-form-item :label="t('machine.pdThresholdType')" label-position="top">
-                <el-select v-model="pdSelectedType" value-key="id" clearable class="!w-full">
-                  <el-option v-for="item in pdThresholdTypeOptions" :key="item.id" :label="item.name" :value="item"/>
-                </el-select>
-              </el-form-item>
-
-              <!-- Công thức ΔPD%/tháng RIÊNG của bộ phận - chưa gán gì = dùng công thức theo loại bộ phận,
-                   hoặc mặc định cố định nếu loại bộ phận cũng chưa cấu hình. -->
-              <PdFormulaAssignmentPicker v-if="pdSelectedType?.id === PD_GROWTH_RATE_ID" :target-type="1" :target-id="props.componentId"/>
-
-              <threshold-tab :threshold-list="pdThresholdList"/>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
+            <!-- Single-select - PD chỉ chọn 1 trong 2 kiểu (ΔPD%/tháng HOẶC ngưỡng dB tuyệt đối). -->
+            <template #toolbar>
+              <el-select
+                  v-model="pdSelectedType"
+                  value-key="id"
+                  clearable
+                  size="small"
+                  style="width: 270px"
+                  :placeholder="t('machine.pdThresholdType')"
+              >
+                <el-option v-for="item in pdThresholdTypeOptions" :key="item.id" :label="item.name" :value="item"/>
+              </el-select>
+            </template>
+            <!-- Công thức ΔPD%/tháng RIÊNG của bộ phận - chưa gán gì = dùng công thức theo loại bộ phận,
+                 hoặc mặc định cố định nếu loại bộ phận cũng chưa cấu hình. -->
+            <template #extra="{ mode }">
+              <PdFormulaSection v-if="mode.id === PD_GROWTH_RATE_ID" :target-type="1" :target-id="props.componentId"/>
+            </template>
+          </threshold-tab>
+        </div>
       </el-tab-pane>
     </el-tabs>
 
@@ -77,11 +108,12 @@ import { useLang } from '@/hooks/web/useI18n'
 import {computed, ref} from 'vue'
 import CancelButton from '@/components/Button/CancelButton.vue'
 import {cloneObject} from "@/utils/objectUtils";
-import {defaultLevels} from "@/views/category/machine/components/levels";
+import {buildDefaultThresholds} from "@/views/category/machine/components/levels";
 import ThresholdTab from "@/views/category/machine/components/ThresholdTab.vue";
 import ThresholdFilter from '@/views/category/machine-part/components/ThresholdFilter.vue'
-import PdFormulaAssignmentPicker from '@/views/category/machine/components/PdFormulaAssignmentPicker.vue'
+import PdFormulaSection from '@/views/category/machine/components/PdFormulaSection.vue'
 import { useConfigStore } from '@/store/modules/configStore'
+import DrawerTitle from '@/components/Dialog/DrawerTitle.vue'
 
 const { t } = useLang()
 
@@ -126,11 +158,23 @@ const props = defineProps({
     type: Number,
     required: false,
   },
+  // Ngữ cảnh hiển thị trên tiêu đề: [tên thiết bị, tên bộ phận]
+  crumbs: {
+    type: Array<string | undefined | null>,
+    default: () => [],
+  },
 })
 
 const domainTab = ref<'thermal' | 'pd'>('thermal')
 const thermalTabModel = ref(props.tab)
 const pdTabModel = ref(props.tab)
+
+// Không truyền ngưỡng kế thừa thì chỉ còn phần khai báo riêng
+const hasInherited = computed(() => !!props.machinePartThresholdList)
+const scopeOptions = computed(() => [
+  { label: t('machine.inheritFromType'), value: 'gen' },
+  { label: t('machine.customThreshold'), value: 'main' },
+])
 
 // Emits
 const emits = defineEmits(['save', 'cancel', 'update:thresholdList'])
@@ -152,11 +196,7 @@ const changeThresholdTypeList = () => {
         props.thresholdList.find(item => item.id === modeTmp.id) :
         false;
     if (!oldMode) {
-      modeTmp.temperatureThresholds = defaultLevels.map((levelItem) => ({
-        maxTemperature: 0,
-        thresholdType: mode.id,
-        level: levelItem.level
-      }))
+      modeTmp.temperatureThresholds = buildDefaultThresholds(mode.id)
       listModeTmp.push(modeTmp)
     } else {
       listModeTmp.push(oldMode)
@@ -188,3 +228,28 @@ const pdThresholdList = computed(() => (props.thresholdList ?? []).filter((t: an
 const thermalMachinePartThresholdList = computed(() => (props.machinePartThresholdList ?? []).filter((t: any) => !PD_THRESHOLD_TYPE_IDS.includes(t.id)))
 const pdMachinePartThresholdList = computed(() => (props.machinePartThresholdList ?? []).filter((t: any) => PD_THRESHOLD_TYPE_IDS.includes(t.id)))
 </script>
+
+<style scoped>
+.threshold-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.scope-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.threshold-domain-tabs :deep(.el-tabs__header) {
+  margin-bottom: 12px;
+}
+
+.threshold-domain-tabs :deep(.el-tabs__item) {
+  font-size: 14px;
+  font-weight: 600;
+}
+</style>

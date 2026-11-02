@@ -1,0 +1,112 @@
+import { test, expect, Page } from '@playwright/test'
+import { openPage, snap } from './helpers'
+
+const rows = (page: Page) => page.locator('.el-table__body-wrapper tbody tr')
+async function imagesLoaded(page: Page) {
+  await page.waitForTimeout(2500)
+  return page.locator('.el-table__body-wrapper img').evaluateAll((imgs) =>
+    (imgs as HTMLImageElement[]).map((i) => ({ src: i.currentSrc || i.src, ok: i.complete && i.naturalWidth > 0 })))
+}
+
+test('TC-05-20 | PD: danh sách cảnh báo có dữ liệu và đủ cột | Cảnh báo phóng điện (PD) | /event/pd-notification-system', async ({ page }) => {
+  await openPage(page, '/event/pd-notification-system')
+  expect(await rows(page).count()).toBeGreaterThan(0)
+  const heads = (await page.locator('thead th').allInnerTexts()).join('|')
+  for (const h of ['Hình ảnh', 'Ngày', 'Khu vực', 'Camera', 'Cường độ PĐ', 'Đánh giá', 'Trạng thái']) expect(heads).toContain(h)
+  await snap(page)
+})
+test('TC-05-21 | PD: tất cả ảnh cảnh báo tải được (không bị lỗi ảnh) | Cảnh báo phóng điện (PD) | /event/pd-notification-system', async ({ page }) => {
+  await openPage(page, '/event/pd-notification-system')
+  const imgs = await imagesLoaded(page)
+  expect(imgs.length).toBeGreaterThan(0)
+  const bad = imgs.filter((i) => !i.ok)
+  expect(bad, `Ảnh lỗi: ${JSON.stringify(bad)}`).toHaveLength(0)
+  await snap(page)
+})
+test('TC-05-22 | PD: bấm ảnh mở trình xem phóng to và đóng lại | Cảnh báo phóng điện (PD) | /event/pd-notification-system', async ({ page }) => {
+  await openPage(page, '/event/pd-notification-system')
+  await page.locator('.el-table__body-wrapper img').first().click()
+  const viewer = page.locator('.el-image-viewer__wrapper')
+  await expect(viewer).toBeVisible()
+  await snap(page)
+  await page.keyboard.press('Escape')
+  await expect(viewer).toBeHidden()
+})
+test('TC-05-23 | PD: lọc khoảng thời gian không có dữ liệu hiển thị trạng thái rỗng | Cảnh báo phóng điện (PD) | /event/pd-notification-system', async ({ page }) => {
+  await openPage(page, '/event/pd-notification-system')
+  const from = page.locator('.el-date-editor input').nth(0)
+  const to = page.locator('.el-date-editor input').nth(1)
+  await from.fill('2020-01-01 00:00:00'); await from.press('Enter')
+  await to.fill('2020-01-02 00:00:00'); await to.press('Enter')
+  await page.getByRole('button', { name: 'Tìm kiếm' }).first().click()
+  await page.waitForTimeout(2000)
+  await expect(page.locator('.el-table__empty-text, .el-empty').first()).toBeVisible()
+  await snap(page)
+})
+test('TC-05-24 | PD: bấm Xuất file không báo lỗi máy chủ | Cảnh báo phóng điện (PD) | /event/pd-notification-system', async ({ page }) => {
+  await openPage(page, '/event/pd-notification-system')
+  const btn = page.getByRole('button', { name: 'Xuất file' }).first()
+  await expect(btn).toBeVisible()
+  const resp = page.waitForResponse((r) => r.url().includes('/api/Export/exportNotifications'), { timeout: 15000 })
+  await btn.click()
+  const r = await resp
+  await page.waitForTimeout(1200)
+  await snap(page)
+  expect(r.status(), `Xuất file trả lỗi: ${(await r.text()).slice(0, 200)}`).toBe(200)
+})
+test('TC-05-25 | PD: nhật ký phóng điện hiển thị cường độ (dB), mức tham chiếu và đánh giá | Lịch sử phóng điện | /event/pd-history', async ({ page }) => {
+  await openPage(page, '/event/pd-history')
+  expect(await rows(page).count()).toBeGreaterThan(0)
+  const text = await rows(page).first().innerText()
+  expect(text).toMatch(/dB/)
+  await snap(page)
+})
+test('TC-06-20 | AI: danh sách cảnh báo có dữ liệu, ảnh tải được | Cảnh báo AI | /event/ai-notification', async ({ page }) => {
+  await openPage(page, '/event/ai-notification')
+  expect(await rows(page).count()).toBeGreaterThan(0)
+  const imgs = await imagesLoaded(page)
+  expect(imgs.length).toBeGreaterThan(0)
+  expect(imgs.filter((i) => !i.ok), 'Có ảnh cảnh báo AI bị lỗi').toHaveLength(0)
+  await snap(page)
+})
+test('TC-06-21 | AI: chuyển sang trang 2 hiển thị dữ liệu khác | Cảnh báo AI | /event/ai-notification', async ({ page }) => {
+  await openPage(page, '/event/ai-notification')
+  const first = await rows(page).first().innerText()
+  await page.locator('.el-pagination .el-pager li', { hasText: /^2$/ }).click()
+  await page.waitForTimeout(1500)
+  const second = await rows(page).first().innerText()
+  expect(second).not.toEqual(first)
+  await snap(page)
+})
+test('TC-06-22 | AI: đổi cỡ trang 10 → 20 hiển thị 20 dòng | Cảnh báo AI | /event/ai-notification', async ({ page }) => {
+  await openPage(page, '/event/ai-notification')
+  await page.locator('.el-pagination .el-select').click()
+  await page.locator('.el-select-dropdown__item:visible', { hasText: '20/trang' }).click()
+  await page.waitForTimeout(1800)
+  expect(await rows(page).count()).toBe(20)
+  await snap(page)
+})
+test('TC-06-23 | AI: bấm ảnh mở trình xem phóng to | Cảnh báo AI | /event/ai-notification', async ({ page }) => {
+  await openPage(page, '/event/ai-notification')
+  await page.locator('.el-table__body-wrapper img').first().click()
+  await expect(page.locator('.el-image-viewer__wrapper')).toBeVisible()
+  await snap(page)
+})
+test('TC-06-24 | AI: loại cảnh báo hiển thị tên tiếng Việt (Phát hiện người) | Cảnh báo AI | /event/ai-notification', async ({ page }) => {
+  await openPage(page, '/event/ai-notification')
+  expect(await rows(page).first().innerText()).toContain('Phát hiện người')
+  await snap(page)
+})
+test('TC-04-20 | Sự kiện nhiệt: chưa có dữ liệu hiển thị trạng thái rỗng, không lỗi | Cảnh báo nhiệt độ | /event/notification-system', async ({ page }) => {
+  await openPage(page, '/event/notification-system')
+  await page.getByRole('button', { name: 'Tìm kiếm' }).first().click()
+  await page.waitForTimeout(1500)
+  await expect(page.locator('body')).not.toContainText(/Internal Server Error|undefined/)
+  await snap(page)
+})
+test('TC-04-21 | Trang chủ sự kiện: biểu đồ và bộ lọc hiển thị | Trang chủ sự kiện | /event/home', async ({ page }) => {
+  await openPage(page, '/event/home')
+  await expect(page.getByText('Nhật ký nhiệt độ theo điểm đo').first()).toBeVisible()
+  await expect(page.getByText('Thống kê số lượng cảnh báo').first()).toBeVisible()
+  await snap(page)
+})

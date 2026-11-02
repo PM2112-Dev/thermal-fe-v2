@@ -45,6 +45,9 @@ const handlePreview = (file) => {
   }
   reader.readAsDataURL(file)
   emit("onfile", file)
+  // Không có action nên chặn upload tự động (nếu không el-upload sẽ POST lên "#" và báo lỗi 404);
+  // file được gửi cùng biểu mẫu khi bấm Lưu
+  return false
 }
 
 const removeImage = () => {

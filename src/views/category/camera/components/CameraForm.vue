@@ -89,11 +89,20 @@
               prop="brand"
               :error="formErrors.Brand"
           >
-            <select-from-config
-                key-config="cameraBrandList"
-                v-model="formModel.brand"
-                col-value="code"
-            />
+            <el-select v-model="formModel.brand" filterable class="brand-select" :loading="brandLoading">
+              <el-option v-for="b in brands" :key="b.code" :label="b.name" :value="b.code">
+                <div class="brand-option">
+                  <span>{{ b.name }}</span>
+                  <span :class="['brand-plugin', b.plugin?.active ? 'is-on' : '']">
+                    {{ b.plugin ? (b.plugin.active ? 'plugin' : 'off') : '' }}
+                  </span>
+                </div>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('camera.channel')" prop="channel" :error="formErrors.Channel">
+            <el-input-number v-model="formModel.channel" :min="1" :max="64" :controls="false" class="!w-full"/>
+            <div class="field-hint">{{ t('camera.channelHint') }}</div>
           </el-form-item>
           <el-form-item
               :label="t('fields.status')"
@@ -123,10 +132,11 @@
 import { useLang } from '@/hooks/web/useI18n'
 import FormWrapper from '@/components/Form/FormWrapper.vue'
 import SelectFromConfig from '@/components/Selection/SelectFromConfig.vue'
-import {computed} from 'vue'
+import {computed, onMounted, ref} from 'vue'
 import {rule} from '@/utils/validate'
 import {FormRules} from 'element-plus'
 import {getAllTreeAreaApi} from '@/api/area'
+import {getCameraBrandsApi} from '@/api/camera-brand'
 import {addCameraApi, editCameraApi, getAllCamerasApi} from '@/api/camera'
 import InputNumber from '@/components/Input/InputNumber.vue'
 import {CAMERA_NORMAL_TYPE, CAMERA_THERMAL_TYPE} from '@/constants'
@@ -146,6 +156,18 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+})
+
+// Hãng lấy từ danh mục hãng (kể cả hãng thêm qua plugin), không còn cố định theo enum
+const brands = ref<any[]>([])
+const brandLoading = ref(false)
+onMounted(async () => {
+  brandLoading.value = true
+  try {
+    brands.value = ((await getCameraBrandsApi()).data ?? []).filter((b: any) => b.status === 'Active')
+  } finally {
+    brandLoading.value = false
+  }
 })
 
 const appStore = useAppStore();
@@ -179,4 +201,28 @@ const handleSuccess = (data: any) => {
 }
 </script>
 <style scoped>
+.brand-select {
+  width: 100%;
+}
+.brand-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.brand-plugin {
+  font-size: 11px;
+  color: var(--text-sub);
+}
+.brand-plugin.is-on {
+  color: var(--success);
+  font-weight: 600;
+}
+.field-hint {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-sub);
+}
 </style>

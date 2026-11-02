@@ -1,6 +1,6 @@
 <template>
-  <div class="pd-assignment">
-    <div class="pd-assignment__label-row">
+  <div class="pd-assignment" :class="{ 'is-embedded': embedded }">
+    <div v-if="!embedded" class="pd-assignment__label-row">
       <span class="pd-assignment__label">{{ t('formula.assignment.title') }}</span>
       <span class="pd-assignment-card__hint">{{ t('formula.assignment.editHint') }}</span>
     </div>
@@ -154,6 +154,8 @@ const props = defineProps<{
   targetType: number
   /** Id của bộ phận/loại bộ phận - undefined khi đang thêm mới (chưa lưu, chưa có id). */
   targetId?: number
+  /** Nằm trong khung đã có tiêu đề (PdFormulaSection) - ẩn hàng tiêu đề riêng. */
+  embedded?: boolean
 }>()
 
 const targetLabel = computed(() => (props.targetType === 2 ? t('formula.assignment.targetPartType') : t('formula.assignment.targetPart')))
@@ -303,6 +305,10 @@ watch(() => props.targetId, loadHistory)
 <style scoped>
 .pd-assignment {
   margin-bottom: 20px;
+}
+
+.pd-assignment.is-embedded {
+  margin-bottom: 0;
 }
 
 .pd-assignment__label-row {

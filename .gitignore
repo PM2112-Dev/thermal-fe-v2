@@ -32,3 +32,8 @@ auto-imports.d.ts
 components.d.ts
 .env
 env.d.ts
+
+# Playwright
+e2e/.auth/
+e2e/.results/
+e2e/.report/

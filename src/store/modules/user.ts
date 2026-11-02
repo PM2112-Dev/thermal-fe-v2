@@ -17,6 +17,8 @@ interface UserState {
   roleRouters?: string[] | AppCustomRouteRecordRaw[]
   rememberMe: boolean
   permissions: string[]
+  // featureCode -> các action (read/create/update/delete/import/export) được cấp
+  permissionActions: Record<string, string[]>
 }
 
 export const useUserStore = defineStore('user', {
@@ -28,6 +30,7 @@ export const useUserStore = defineStore('user', {
       expiresAt: 0 as number, // timestamp (milliseconds)
       rememberMe: true,
       permissions: [] as string[],
+      permissionActions: {} as Record<string, string[]>,
     }
   },
   getters: {
@@ -57,27 +60,34 @@ export const useUserStore = defineStore('user', {
     updateStates(state: Partial<UserState>) {
       this.$state = { ...this.$state, ...state }
     },
-    normalizePermissions(user: any): string[] {
+    // Quyền do BE trả dạng [{ featureCode, actions[] }] (hoặc danh sách mã cũ). Trả null khi response không có
+    // trường quyền (vd. API không kèm quyền) để KHÔNG ghi đè quyền đang có bằng danh sách rỗng.
+    extractPermissions(user: any): { codes: string[]; actions: Record<string, string[]> } | null {
       const raw = user?.permissions ?? user?.features
-      if (!Array.isArray(raw)) return []
-      return raw
-        .map((item: any) => (typeof item === 'string' ? item : (item?.featureCode ?? item?.code)))
-        .filter((code: unknown): code is string => typeof code === 'string' && code.length > 0)
+      if (!Array.isArray(raw)) return null
+      const actions: Record<string, string[]> = {}
+      for (const item of raw) {
+        const code = typeof item === 'string' ? item : (item?.featureCode ?? item?.code)
+        if (typeof code !== 'string' || !code) continue
+        actions[code] = Array.isArray(item?.actions) ? item.actions : (actions[code] ?? ['read'])
+      }
+      return { codes: Object.keys(actions), actions }
     },
     updateStatesFromResponse(res: any) {
       const expireAt = new Date(res.data.refreshTokenExpiryTime).getTime()
       const user = expireAt ? res.data.user : res.data
-      const permissions = this.normalizePermissions(user)
+      const perm = this.extractPermissions(user)
+      const permStates = perm ? { permissions: perm.codes, permissionActions: perm.actions } : {}
       let states = {
         userInfo: res.data,
-        permissions,
+        ...permStates,
       } as object
       if (expireAt) {
         states = {
           userInfo: res.data.user,
           accessToken: res.data.token,
           refreshToken: res.data.refreshToken,
-          permissions,
+          ...permStates,
           expiresAt: expireAt,
         }
       }
@@ -103,7 +113,7 @@ export const useUserStore = defineStore('user', {
       })
     },
     reset() {
-      this.updateStates({ userInfo: undefined, accessToken: '', refreshToken: '', expiresAt: 0 })
+      this.updateStates({ userInfo: undefined, accessToken: '', refreshToken: '', expiresAt: 0, permissions: [], permissionActions: {} })
     },
     resetAndRedirectToLogin() {
       this.reset()
